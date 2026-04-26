@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Retarget Lab</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap');
+
+      :root {
+        color-scheme: dark;
+        --panel-bg: rgba(7, 16, 25, 0.78);
+        --panel-border: rgba(255, 255, 255, 0.12);
+        --panel-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+      }
+
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        font-family: 'Space Grotesk', sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(79, 172, 254, 0.16), transparent 24%),
+          radial-gradient(circle at top right, rgba(43, 203, 186, 0.14), transparent 22%),
+          #071019;
+      }
+
+      body {
+        color: #f4f8ff;
+      }
+
+      #lab-shell {
+        position: relative;
+        width: 100%;
+        height: 100%;
+      }
+
+      #lab-canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+
+      .panel {
+        backdrop-filter: blur(16px);
+        background: var(--panel-bg);
+        border: 1px solid var(--panel-border);
+        box-shadow: var(--panel-shadow);
+      }
+
+      .toolbar {
+        position: absolute;
+        top: max(16px, env(safe-area-inset-top));
+        left: max(16px, env(safe-area-inset-left));
+        right: max(16px, env(safe-area-inset-right));
+        z-index: 10;
+        border-radius: 22px;
+        padding: 16px 18px;
+        display: grid;
+        gap: 12px;
+        max-width: min(980px, calc(100vw - 32px));
+      }
+
+      .toolbar-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .toolbar-head h1 {
+        margin: 0;
+        font-size: clamp(1rem, 2vw, 1.15rem);
+      }
+
+      .toolbar-head p {
+        margin: 4px 0 0;
+        color: rgba(244, 248, 255, 0.72);
+        font-size: 0.84rem;
+      }
+
+      .toolbar-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .field {
+        display: grid;
+        gap: 6px;
+      }
+
+      .field label {
+        font-size: 0.76rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #8fd7ff;
+      }
+
+      .field select,
+      .field button {
+        min-height: 44px;
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.1);
+        color: #f4f8ff;
+        font: inherit;
+        padding: 0 14px;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation;
+      }
+
+      .field button {
+        cursor: pointer;
+        font-weight: 700;
+      }
+
+      .toolbar-status {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+        font-size: 0.84rem;
+        color: rgba(244, 248, 255, 0.8);
+      }
+
+      .toolbar-status strong {
+        color: #ffffff;
+      }
+
+      .compare-grid {
+        position: absolute;
+        left: max(16px, env(safe-area-inset-left));
+        right: max(16px, env(safe-area-inset-right));
+        bottom: max(16px, env(safe-area-inset-bottom));
+        z-index: 10;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .compare-card {
+        border-radius: 20px;
+        padding: 14px 16px;
+        display: grid;
+        gap: 8px;
+        min-height: 124px;
+      }
+
+      .compare-card h2 {
+        margin: 0;
+        font-size: 0.96rem;
+      }
+
+      .compare-card p {
+        margin: 0;
+        font-size: 0.8rem;
+        line-height: 1.45;
+        color: rgba(244, 248, 255, 0.78);
+      }
+
+      .compare-card .chip {
+        display: inline-flex;
+        width: fit-content;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        background: rgba(255, 255, 255, 0.08);
+        color: #9ad9ff;
+      }
+
+      .compare-card .chip[data-state='error'] {
+        color: #ff8f9c;
+      }
+
+      .compare-card .chip[data-state='ready'] {
+        color: #a7ffce;
+      }
+
+      .compare-card .chip[data-state='loading'] {
+        color: #ffd36b;
+      }
+
+      @media (max-width: 1100px) {
+        .toolbar-grid,
+        .compare-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 720px) {
+        .toolbar {
+          padding: 14px;
+        }
+
+        .toolbar-grid,
+        .compare-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+
+        .compare-grid {
+          max-height: 42vh;
+          overflow: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="lab-shell">
+      <canvas id="lab-canvas"></canvas>
+
+      <section class="toolbar panel" aria-label="Retarget Controls">
+        <div class="toolbar-head">
+          <div>
+            <h1>Retarget Lab</h1>
+            <p>같은 Mixamo FBX를 여러 방식으로 현재 캐릭터에 붙여서 비교하는 전용 테스트 페이지입니다.</p>
+          </div>
+        </div>
+
+        <div class="toolbar-grid">
+          <div class="field">
+            <label for="character-select">Character</label>
+            <select id="character-select"></select>
+          </div>
+          <div class="field">
+            <label for="animation-select">Animation</label>
+            <select id="animation-select"></select>
+          </div>
+          <div class="field">
+            <label for="speed-select">Speed</label>
+            <select id="speed-select">
+              <option value="0.5">0.5x</option>
+              <option value="0.75">0.75x</option>
+              <option value="1" selected>1.0x</option>
+              <option value="1.25">1.25x</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="play-toggle">Playback</label>
+            <button id="play-toggle" type="button">Pause</button>
+          </div>
+        </div>
+
+        <div class="toolbar-status">
+          <span><strong id="status-file">Waiting</strong></span>
+          <span id="status-note">Select a character and animation to compare methods.</span>
+        </div>
+      </section>
+
+      <section id="compare-grid" class="compare-grid" aria-label="Retarget Compare"></section>
+    </div>
+
+    <script type="module" src="/src/game-runtime/retarget-lab.ts"></script>
+  </body>
+</html>
