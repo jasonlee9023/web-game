@@ -46,6 +46,11 @@ export function createApp() {
     );
   });
 
+  app.get('/ads.txt', (_req, res) => {
+    res.type('text/plain');
+    res.send(env.adsensePublisherId ? `google.com, ${env.adsensePublisherId}, DIRECT, f08c47fec0942fa0\n` : '');
+  });
+
   app.use('/api/auth', authRouter);
   app.use('/api/games', gamesRouter);
   app.use('/api/games', scoresRouter);

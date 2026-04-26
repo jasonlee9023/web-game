@@ -128,6 +128,9 @@ export interface AdSlotConfig {
   position: AdPosition;
   provider: 'adsense' | 'demo';
   unitId: string;
+  clientId?: string;
+  format?: 'auto' | 'rectangle' | 'horizontal' | 'vertical';
+  fullWidthResponsive?: boolean;
   enabled: boolean;
   label: string;
   devices: AdDevice[];

@@ -570,13 +570,24 @@ export const seedScores: ScoreRecord[] = [
   createSeedScore('dungeon-quest', 20420, 6, 'normal', { userId: seedUsers[1]?.id }),
 ];
 
+function adProvider(unitId: string, fallbackUnitId: string, format: AdSlotConfig['format'] = 'auto') {
+  const canServeAdsense = Boolean(env.adsenseClientId && unitId);
+
+  return {
+    provider: canServeAdsense ? 'adsense' : 'demo',
+    unitId: canServeAdsense ? unitId : fallbackUnitId,
+    clientId: canServeAdsense ? env.adsenseClientId : undefined,
+    format,
+    fullWidthResponsive: true,
+  } satisfies Pick<AdSlotConfig, 'provider' | 'unitId' | 'clientId' | 'format' | 'fullWidthResponsive'>;
+}
+
 export const seedAdSlots: AdSlotConfig[] = [
   {
     id: randomUUID(),
     page: 'home',
     position: 'top-banner',
-    provider: 'demo',
-    unitId: 'home-top-banner',
+    ...adProvider(env.adsenseSlots.homeTopBanner, 'home-top-banner', 'horizontal'),
     enabled: true,
     label: '오늘의 파트너',
     devices: ['desktop', 'mobile'],
@@ -586,8 +597,7 @@ export const seedAdSlots: AdSlotConfig[] = [
     id: randomUUID(),
     page: 'home',
     position: 'in-feed',
-    provider: 'demo',
-    unitId: 'home-in-feed',
+    ...adProvider(env.adsenseSlots.homeInFeed, 'home-in-feed', 'rectangle'),
     enabled: true,
     label: '추천 스폰서',
     devices: ['desktop', 'mobile'],
@@ -597,8 +607,7 @@ export const seedAdSlots: AdSlotConfig[] = [
     id: randomUUID(),
     page: 'game-detail',
     position: 'right-rail',
-    provider: 'demo',
-    unitId: 'detail-right-rail',
+    ...adProvider(env.adsenseSlots.gameDetailRightRail, 'detail-right-rail', 'vertical'),
     enabled: true,
     label: '사이드 배너',
     devices: ['desktop'],
@@ -608,8 +617,7 @@ export const seedAdSlots: AdSlotConfig[] = [
     id: randomUUID(),
     page: 'game-play',
     position: 'right-rail',
-    provider: 'demo',
-    unitId: 'play-right-rail',
+    ...adProvider(env.adsenseSlots.gamePlayRightRail, 'play-right-rail', 'vertical'),
     enabled: true,
     label: '플레이 사이드 슬롯',
     devices: ['desktop'],
@@ -619,8 +627,7 @@ export const seedAdSlots: AdSlotConfig[] = [
     id: randomUUID(),
     page: 'ranking',
     position: 'mid-content',
-    provider: 'demo',
-    unitId: 'ranking-mid',
+    ...adProvider(env.adsenseSlots.rankingMidContent, 'ranking-mid', 'horizontal'),
     enabled: true,
     label: '랭킹 스폰서',
     devices: ['desktop', 'mobile'],
