@@ -486,7 +486,7 @@ export const seedGames: GameEntity[] = [
     shortDescription: 'Kenney Mini Dungeon 에셋으로 만든 저폴리 던전 액션 RPG',
     description:
       'Dungeon Quest는 무료 CC0 저폴리 에셋을 이용해 만든 짧은 던전 액션 RPG입니다. 인간 기사로 입장해 오크 수호자를 쓰러뜨리고, 보물상자를 열어 게이트를 해제한 뒤 출구 계단으로 탈출하는 흐름으로 구성했습니다.',
-    thumbnailUrl: `${env.webOrigin}/assets/dungeon-quest/preview.png`,
+    thumbnailUrl: `${env.webOrigin}/assets/dungeon-quest/screenshot.png`,
     bannerUrl: `${env.webOrigin}/assets/dungeon-quest/sample.png`,
     entryUrl: `${env.webOrigin}/games/dungeon-quest/index.html`,
     version: '1.0.0',
