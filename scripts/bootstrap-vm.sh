@@ -49,9 +49,11 @@ cd "${RELEASE_DIR}"
 npm ci
 npm run build
 npm run pm2:start
+sudo env PATH="$PATH" pm2 startup systemd -u "$(id -un)" --hp "$HOME"
 npm run pm2:save
 
-if command -v nginx >/dev/null 2>&1; then
+NGINX_BIN="$(command -v nginx || command -v /usr/sbin/nginx || true)"
+if [ -n "${NGINX_BIN}" ]; then
   sudo tee /etc/nginx/sites-available/gamezip.kr >/dev/null <<EOF
 server {
     listen 80;
@@ -74,7 +76,7 @@ server {
 EOF
   sudo ln -sfn /etc/nginx/sites-available/gamezip.kr /etc/nginx/sites-enabled/gamezip.kr
   sudo rm -f /etc/nginx/sites-enabled/default
-  sudo nginx -t
+  sudo "${NGINX_BIN}" -t
   sudo systemctl reload nginx
 fi
 
