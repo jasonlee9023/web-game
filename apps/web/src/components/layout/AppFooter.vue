@@ -2,9 +2,9 @@
   <footer class="app-footer">
     <div class="content-shell footer-grid">
       <section>
-        <p class="eyebrow">Fast entry, safe monetization</p>
-        <h3>광고와 플레이를 분리한 캐주얼 게임 플랫폼 MVP</h3>
-        <p>Vue 포털, iframe 게임 런타임, Express API, 랭킹/로그인/광고 공용 레이어로 구성했습니다.</p>
+        <p class="eyebrow">바로 플레이, 매일 새로운 도전</p>
+        <h3>짧은 휴식에도 즐길 수 있는 무료 캐주얼 게임</h3>
+        <p>설치 없이 즉시 시작하고, 최고 점수를 기록하며, 오늘의 랭킹에 도전하세요.</p>
       </section>
       <section class="footer-links">
         <RouterLink to="/games">전체 게임</RouterLink>
@@ -15,4 +15,3 @@
     </div>
   </footer>
 </template>
-
