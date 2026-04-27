@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 
 import AdSlot from '@/components/ads/AdSlot.vue';
 import GameGrid from '@/components/game/GameGrid.vue';
@@ -21,12 +21,30 @@ const recommendationGames = computed(() => {
 });
 const firstGridGames = computed(() => gameStore.games.slice(0, 4));
 const remainingGames = computed(() => gameStore.games.slice(4));
+const homeTopBannerRequested = ref(false);
+
+function requestHomeTopBannerAd() {
+  if (homeTopBannerRequested.value) {
+    return;
+  }
+
+  homeTopBannerRequested.value = true;
+  try {
+    window.adsbygoogle = window.adsbygoogle ?? [];
+    window.adsbygoogle.push({});
+  } catch (error) {
+    homeTopBannerRequested.value = false;
+    console.warn('Home top banner AdSense request failed', error);
+  }
+}
 
 onMounted(async () => {
   applySeo({
     title: '메인',
     description: '추천 게임, 오늘의 랭킹, 광고 안전 영역을 갖춘 캐주얼 게임 포털 메인 페이지',
   });
+  await nextTick();
+  requestHomeTopBannerAd();
   await Promise.all([gameStore.loadGames(), rankingStore.loadGlobalRanking('daily')]);
 });
 </script>
@@ -72,7 +90,17 @@ onMounted(async () => {
     </section>
 
     <div class="content-shell home-secondary-grid">
-      <AdSlot page="home" position="top-banner" />
+      <aside class="ad-slot home-top-banner-ad" data-position="top-banner" data-provider="adsense">
+        <!-- home-top-banner -->
+        <ins
+          class="adsbygoogle ad-slot-unit"
+          style="display: block"
+          data-ad-client="ca-pub-2016140648106882"
+          data-ad-slot="1727199573"
+          data-ad-format="auto"
+          data-full-width-responsive="true"
+        ></ins>
+      </aside>
       <section class="feature-panel compact-list">
         <div class="section-heading tight">
           <div>

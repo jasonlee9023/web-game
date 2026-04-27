@@ -797,18 +797,6 @@ h3,
   min-height: 90px;
 }
 
-.ad-slot[data-provider='adsense']:has(.ad-slot-unit[data-ad-status='unfilled']) {
-  display: none;
-  min-height: 0;
-  padding: 0;
-  border: 0;
-}
-
-.ad-slot[data-provider='adsense']:has(.ad-slot-unit[data-ad-status='unfilled']) .ad-slot-label,
-.ad-slot-unit[data-ad-status='unfilled'] {
-  display: none !important;
-}
-
 .ad-slot[data-position='right-rail'] .ad-slot-unit {
   min-height: 280px;
 }
