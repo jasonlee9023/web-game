@@ -87,12 +87,7 @@ EOF
   sudo systemctl reload nginx
 fi
 
-HAS_EXISTING_CERT="false"
-if [ -f /etc/letsencrypt/live/gamezip.kr/fullchain.pem ]; then
-  HAS_EXISTING_CERT="true"
-fi
-
-if { [ -n "${CERTBOT_EMAIL}" ] || [ "${HAS_EXISTING_CERT}" = "true" ]; } && command -v apt-get >/dev/null 2>&1; then
+if command -v apt-get >/dev/null 2>&1; then
   sudo apt-get install -y certbot python3-certbot-nginx
 
   CERTBOT_ARGS=(--nginx --non-interactive --agree-tos --redirect -d gamezip.kr -d www.gamezip.kr)
