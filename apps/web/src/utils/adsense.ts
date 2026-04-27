@@ -11,6 +11,27 @@ function getScriptId(clientId: string) {
   return `${scriptIdPrefix}${clientId.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
 }
 
+function findAdsenseScript(clientId: string) {
+  const scriptId = getScriptId(clientId);
+  const existingById = document.getElementById(scriptId) as HTMLScriptElement | null;
+  if (existingById) {
+    return existingById;
+  }
+
+  return Array.from(document.scripts).find((script) => {
+    try {
+      const url = new URL(script.src);
+      return (
+        url.hostname === 'pagead2.googlesyndication.com' &&
+        url.pathname === '/pagead/js/adsbygoogle.js' &&
+        url.searchParams.get('client') === clientId
+      );
+    } catch {
+      return false;
+    }
+  }) as HTMLScriptElement | undefined;
+}
+
 export function loadAdsense(clientId: string) {
   const existingPromise = scriptPromises.get(clientId);
   if (existingPromise) {
@@ -18,9 +39,10 @@ export function loadAdsense(clientId: string) {
   }
 
   const scriptId = getScriptId(clientId);
-  const existingScript = document.getElementById(scriptId) as HTMLScriptElement | null;
+  const existingScript = findAdsenseScript(clientId);
 
-  if (existingScript?.dataset.loaded === 'true') {
+  if (existingScript) {
+    existingScript.id ||= scriptId;
     const resolved = Promise.resolve();
     scriptPromises.set(clientId, resolved);
     return resolved;

@@ -10,7 +10,10 @@ defineProps<{
 
 <template>
   <article class="game-card">
-    <img class="game-card-image" :src="game.thumbnailUrl" :alt="game.title" />
+    <div class="game-card-media">
+      <img class="game-card-image" :src="game.thumbnailUrl" :alt="game.title" />
+      <span class="game-card-badge">{{ game.engineType }}</span>
+    </div>
     <div class="game-card-body">
       <div class="game-card-topline">
         <span class="game-card-category">{{ game.categories[0] }}</span>
@@ -22,8 +25,8 @@ defineProps<{
         <span v-for="tag in game.tags.slice(0, 3)" :key="tag">{{ tag }}</span>
       </div>
       <div class="game-card-metrics">
-        <span>플레이 {{ formatCompact(game.playCount) }}</span>
-        <span>최고점 {{ formatScore(game.bestScore) }}</span>
+        <span><b>{{ formatCompact(game.playCount) }}</b> 플레이</span>
+        <span><b>{{ formatScore(game.bestScore) }}</b> 최고점</span>
       </div>
       <div class="game-card-actions">
         <RouterLink class="pill-button quiet" :to="`/games/${game.slug}`">상세</RouterLink>
@@ -32,4 +35,3 @@ defineProps<{
     </div>
   </article>
 </template>
-

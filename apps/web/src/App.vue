@@ -21,8 +21,6 @@ onMounted(() => {
 
 <template>
   <div class="app-shell" :class="{ 'is-immersive': immersive }">
-    <div class="ambient ambient-left"></div>
-    <div class="ambient ambient-right"></div>
     <AppHeader :immersive="immersive" />
     <main class="app-main">
       <RouterView />
@@ -31,4 +29,3 @@ onMounted(() => {
     <MobileNav v-if="!immersive" />
   </div>
 </template>
-

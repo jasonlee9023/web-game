@@ -37,25 +37,9 @@ export interface SessionEntity extends PlaySession {
   endedAt?: string;
 }
 
-function svgData(label: string, colors: [string, string], subtitle: string) {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675">
-    <defs>
-      <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stop-color="${colors[0]}"/>
-        <stop offset="100%" stop-color="${colors[1]}"/>
-      </linearGradient>
-    </defs>
-    <rect width="1200" height="675" fill="url(#bg)"/>
-    <circle cx="1020" cy="140" r="120" fill="rgba(255,255,255,.18)"/>
-    <circle cx="240" cy="560" r="140" fill="rgba(255,255,255,.1)"/>
-    <text x="80" y="250" fill="#fff8ef" font-size="90" font-family="Arial" font-weight="700">${label}</text>
-    <text x="84" y="330" fill="#fff8ef" font-size="34" font-family="Arial">${subtitle}</text>
-  </svg>`;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-}
-
 const now = Date.now();
 const byOffsetHours = (hours: number) => new Date(now - hours * 60 * 60 * 1000).toISOString();
+const gameScreenshot = (slug: string) => `${env.webOrigin}/assets/game-screenshots/${slug}.png`;
 
 export const seedUsers: UserEntity[] = [
   {
@@ -90,8 +74,8 @@ export const seedGames: GameEntity[] = [
     shortDescription: '떨어지는 별을 먹고 폭탄을 피하는 세로형 러너',
     description:
       'Jump Cat은 좌우 이동으로 별을 수집하고 폭탄을 회피하는 포트레이트 러너입니다. 터치와 키보드 모두 대응하고, 짧은 세션 안에서 콤보를 쌓는 구조라 광고 후 1회 부활 흐름과 잘 맞습니다.',
-    thumbnailUrl: svgData('Jump Cat', ['#ff7a18', '#ffb347'], 'Portrait dodge runner'),
-    bannerUrl: svgData('Jump Cat', ['#ff7a18', '#ffb347'], 'Collect stars, dodge bombs'),
+    thumbnailUrl: gameScreenshot('jump-cat'),
+    bannerUrl: gameScreenshot('jump-cat'),
     entryUrl: `${env.webOrigin}/games/jump-cat/index.html`,
     version: '1.1.0',
     engineType: 'canvas',
@@ -123,8 +107,8 @@ export const seedGames: GameEntity[] = [
     shortDescription: '차선을 바꾸며 장벽을 피하고 부스트 게이트를 통과하는 레인 드라이버',
     description:
       'Neon Drift는 4개 차선을 오가며 장벽을 피하는 하이웨이 스타일 아케이드 게임입니다. 부스트 게이트를 먹으면 큰 점수를 얻고, 장벽을 통과한 개수로 기본 점수가 쌓입니다.',
-    thumbnailUrl: svgData('Neon Drift', ['#0f2027', '#2c5364'], 'Lane dodge highway'),
-    bannerUrl: svgData('Neon Drift', ['#0f2027', '#2c5364'], 'Shift lanes, hit boost gates'),
+    thumbnailUrl: gameScreenshot('neon-drift'),
+    bannerUrl: gameScreenshot('neon-drift'),
     entryUrl: `${env.webOrigin}/games/neon-drift/index.html`,
     version: '1.1.0',
     engineType: 'webgl',
@@ -156,8 +140,8 @@ export const seedGames: GameEntity[] = [
     shortDescription: '같은 색 버블을 2개 이상 눌러 연쇄 점수를 만드는 퍼즐 스코어 어택',
     description:
       'Bubble Sort Blitz는 한 번의 클릭으로 같은 색 버블 묶음을 지우는 퍼즐 게임입니다. 보드가 막히면 자동으로 새 보드가 들어오고, 짧은 시간 안에 연속 팝을 만들수록 콤보 보너스가 커집니다.',
-    thumbnailUrl: svgData('Bubble Sort Blitz', ['#11998e', '#38ef7d'], 'Combo puzzle sprint'),
-    bannerUrl: svgData('Bubble Sort Blitz', ['#11998e', '#38ef7d'], 'Cluster pop combo puzzle'),
+    thumbnailUrl: gameScreenshot('bubble-sort-blitz'),
+    bannerUrl: gameScreenshot('bubble-sort-blitz'),
     entryUrl: `${env.webOrigin}/games/bubble-sort-blitz/index.html`,
     version: '1.1.0',
     engineType: 'canvas',
@@ -189,8 +173,8 @@ export const seedGames: GameEntity[] = [
     shortDescription: '회전 실드로 소행성을 튕겨내며 코어를 지키는 방어형 아케이드',
     description:
       'Orbit Smash는 원형 궤도 위의 실드를 좌우로 돌리며 소행성을 막아내는 반응 게임입니다. 한 번의 실수로 코어가 깨질 수 있어 긴장감이 높고, 터치 드래그와 방향키 조작 둘 다 자연스럽습니다.',
-    thumbnailUrl: svgData('Orbit Smash', ['#24105d', '#6246ea'], 'Rotate shield, guard core'),
-    bannerUrl: svgData('Orbit Smash', ['#24105d', '#6246ea'], 'Shield orbit defense'),
+    thumbnailUrl: gameScreenshot('orbit-smash'),
+    bannerUrl: gameScreenshot('orbit-smash'),
     entryUrl: `${env.webOrigin}/games/orbit-smash/index.html`,
     version: '1.0.0',
     engineType: 'canvas',
@@ -222,8 +206,8 @@ export const seedGames: GameEntity[] = [
     shortDescription: '드론을 피하면서 보석을 모으는 탑다운 생존 수집 게임',
     description:
       'Pixel Harvest는 WASD 또는 터치 이동으로 보석을 모으고 드론을 피하는 생존형 캐주얼 게임입니다. 시간이 지날수록 적이 늘어나고, 수집한 보석 수에 따라 랭킹 점수가 쌓입니다.',
-    thumbnailUrl: svgData('Pixel Harvest', ['#1b4332', '#2d6a4f'], 'Top-down gem survival'),
-    bannerUrl: svgData('Pixel Harvest', ['#1b4332', '#2d6a4f'], 'Collect gems, dodge drones'),
+    thumbnailUrl: gameScreenshot('pixel-harvest'),
+    bannerUrl: gameScreenshot('pixel-harvest'),
     entryUrl: `${env.webOrigin}/games/pixel-harvest/index.html`,
     version: '1.0.0',
     engineType: 'canvas',
@@ -255,8 +239,8 @@ export const seedGames: GameEntity[] = [
     shortDescription: '블록을 쌓아 줄을 지우는 테트리스형 낙하 퍼즐',
     description:
       'Tetra Fall은 낙하 블록을 좌우 이동과 회전으로 정렬해 줄을 지우는 퍼즐 게임입니다. 라인 클리어 수가 늘수록 낙하 속도가 빨라지고, 하드 드롭과 터치 컨트롤도 함께 지원합니다.',
-    thumbnailUrl: svgData('Tetra Fall', ['#1f2937', '#4f46e5'], 'Falling block puzzle'),
-    bannerUrl: svgData('Tetra Fall', ['#1f2937', '#4f46e5'], 'Stack clean lines fast'),
+    thumbnailUrl: gameScreenshot('tetra-fall'),
+    bannerUrl: gameScreenshot('tetra-fall'),
     entryUrl: `${env.webOrigin}/games/tetra-fall/index.html`,
     version: '1.0.0',
     engineType: 'canvas',
@@ -288,8 +272,8 @@ export const seedGames: GameEntity[] = [
     shortDescription: '패들과 공으로 벽돌을 부수는 클래식 아케이드',
     description:
       'Brick Breaker는 패들을 이동시켜 공을 튕기고 모든 브릭을 제거하는 클래식 벽돌깨기 게임입니다. 벽에 부딪히는 각도와 패들 중심에서의 충돌 지점이 반사 방향을 바꾸며, 두 번 공을 놓치면 게임이 종료됩니다.',
-    thumbnailUrl: svgData('Brick Breaker', ['#102a43', '#3a7bd5'], 'Paddle ball brick crush'),
-    bannerUrl: svgData('Brick Breaker', ['#102a43', '#3a7bd5'], 'Bounce, aim, clear all bricks'),
+    thumbnailUrl: gameScreenshot('brick-breaker'),
+    bannerUrl: gameScreenshot('brick-breaker'),
     entryUrl: `${env.webOrigin}/games/brick-breaker/index.html`,
     version: '1.0.0',
     engineType: 'canvas',
@@ -321,8 +305,8 @@ export const seedGames: GameEntity[] = [
     shortDescription: '사다리를 오르내리며 간식을 모으고 굴러오는 적을 피하는 플랫폼 게임',
     description:
       '너구리는 층별 발판과 사다리를 오르내리며 모든 간식을 회수하는 플랫폼 아케이드 게임입니다. 굴러다니는 적과 충돌하면 게임이 끝나고, 간식을 모두 모으면 다음 스테이지로 넘어가며 적 수와 속도가 올라갑니다.',
-    thumbnailUrl: svgData('Neoguri', ['#2f4f1d', '#6b8f3a'], 'Climb ladders, dodge enemies'),
-    bannerUrl: svgData('Neoguri', ['#2f4f1d', '#6b8f3a'], 'Collect snacks across floors'),
+    thumbnailUrl: gameScreenshot('neoguri'),
+    bannerUrl: gameScreenshot('neoguri'),
     entryUrl: `${env.webOrigin}/games/neoguri/index.html`,
     version: '1.0.0',
     engineType: 'canvas',
@@ -354,8 +338,8 @@ export const seedGames: GameEntity[] = [
     shortDescription: '적 편대를 무너뜨리고 다이빙 공격을 피하는 고정 슈터',
     description:
       '갤러그는 좌우 이동과 연사만으로 적 편대를 하나씩 정리하는 고정 슈터입니다. 편대는 좌우로 이동하며 탄막을 내리고, 일부 적은 급강하 공격까지 섞어 들어와 짧은 플레이 안에서도 강한 집중감을 만듭니다.',
-    thumbnailUrl: svgData('Galaga', ['#080d22', '#253f87'], 'Fixed shooter against alien swarm'),
-    bannerUrl: svgData('Galaga', ['#080d22', '#253f87'], 'Break formations, dodge dive attacks'),
+    thumbnailUrl: gameScreenshot('galaga'),
+    bannerUrl: gameScreenshot('galaga'),
     entryUrl: `${env.webOrigin}/games/galaga/index.html`,
     version: '1.0.0',
     engineType: 'canvas',
@@ -387,8 +371,8 @@ export const seedGames: GameEntity[] = [
     shortDescription: '배리어 뒤에서 적 편대를 막아내는 클래식 고정 슈터',
     description:
       'Space Invaders는 좌우로 이동하는 적 편대를 상대로 배리어를 활용해 버티는 고전 슈터입니다. 편대가 점점 빨라지고 아래로 내려오며, 적 탄환과 편대 돌파를 동시에 관리해야 해서 짧은 세션에도 긴장감이 높습니다.',
-    thumbnailUrl: svgData('Space Invaders', ['#07101a', '#224d6d'], 'Retro formation shooter'),
-    bannerUrl: svgData('Space Invaders', ['#07101a', '#224d6d'], 'Protect barriers, stop the swarm'),
+    thumbnailUrl: gameScreenshot('space-invaders'),
+    bannerUrl: gameScreenshot('space-invaders'),
     entryUrl: `${env.webOrigin}/games/space-invaders/index.html`,
     version: '1.0.0',
     engineType: 'canvas',
@@ -420,8 +404,8 @@ export const seedGames: GameEntity[] = [
     shortDescription: '차와 강을 건너 홈 슬롯을 채우는 횡단 액션 게임',
     description:
       'Frogger는 도로 위 자동차를 피하고 강 위 통나무를 타며 반대편 홈 슬롯 다섯 곳을 채우는 액션 게임입니다. 스테이지가 오를수록 차량과 통나무 속도가 빨라지고, 짧은 판단 실수가 바로 실점으로 이어집니다.',
-    thumbnailUrl: svgData('Frogger', ['#0f2514', '#2f6d4f'], 'Road and river crossing'),
-    bannerUrl: svgData('Frogger', ['#0f2514', '#2f6d4f'], 'Hop across traffic and water'),
+    thumbnailUrl: gameScreenshot('frogger'),
+    bannerUrl: gameScreenshot('frogger'),
     entryUrl: `${env.webOrigin}/games/frogger/index.html`,
     version: '1.0.0',
     engineType: 'canvas',
@@ -453,8 +437,8 @@ export const seedGames: GameEntity[] = [
     shortDescription: 'AI와 랠리를 주고받으며 7점을 노리는 패들 아케이드',
     description:
       'Pong Duel은 고전 패들 게임 구조를 현대적인 캔버스 연출로 정리한 1인 경기형 샘플입니다. 랠리가 길어질수록 공이 빨라지고, 7점을 먼저 만들거나 타이머 종료 시점의 우세 점수로 승부가 갈립니다.',
-    thumbnailUrl: svgData('Pong Duel', ['#11162a', '#355f9b'], 'Classic paddle duel'),
-    bannerUrl: svgData('Pong Duel', ['#11162a', '#355f9b'], 'Outplay the AI in long rallies'),
+    thumbnailUrl: gameScreenshot('pong-duel'),
+    bannerUrl: gameScreenshot('pong-duel'),
     entryUrl: `${env.webOrigin}/games/pong-duel/index.html`,
     version: '1.0.0',
     engineType: 'canvas',
