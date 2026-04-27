@@ -13,10 +13,11 @@ const rankingStore = useRankingStore();
 const dailyTop = computed(() =>
   rankingStore.globalRanking?.buckets.flatMap((bucket) => bucket.items.slice(0, 2)).slice(0, 10) ?? [],
 );
-const heroGame = computed(() => gameStore.featuredGames[0] ?? gameStore.games[0]);
+const heroGame = computed(() => gameStore.games.find((game) => game.slug === 'dungeon-quest') ?? gameStore.featuredGames[0] ?? gameStore.games[0]);
+const heroImageUrl = computed(() => heroGame.value?.thumbnailUrl ?? heroGame.value?.bannerUrl);
 const recommendationGames = computed(() => {
-  const featured = gameStore.featuredGames.slice(1, 4);
-  return featured.length ? featured : gameStore.games.slice(1, 4);
+  const featured = gameStore.featuredGames.filter((game) => game.slug !== heroGame.value?.slug).slice(0, 3);
+  return featured.length ? featured : gameStore.games.filter((game) => game.slug !== heroGame.value?.slug).slice(0, 3);
 });
 const firstGridGames = computed(() => gameStore.games.slice(0, 4));
 const remainingGames = computed(() => gameStore.games.slice(4));
@@ -78,7 +79,7 @@ onMounted(async () => {
         </div>
 
         <RouterLink v-if="heroGame" class="spotlight-preview" :to="`/games/${heroGame.slug}/play`">
-          <img :src="heroGame.bannerUrl" :alt="heroGame.title" />
+          <img :src="heroImageUrl" :alt="heroGame.title" />
           <div class="spotlight-preview-body">
             <span class="game-card-category">{{ heroGame.categories[0] }}</span>
             <h2>{{ heroGame.title }}</h2>
