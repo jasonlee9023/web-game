@@ -571,7 +571,7 @@ export const seedAdSlots: AdSlotConfig[] = [
     id: randomUUID(),
     page: 'home',
     position: 'top-banner',
-    ...adProvider(env.adsenseSlots.homeTopBanner, 'home-top-banner', 'horizontal'),
+    ...adProvider(env.adsenseSlots.homeTopBanner, 'home-top-banner', 'auto'),
     enabled: true,
     label: '오늘의 파트너',
     devices: ['desktop', 'mobile'],
