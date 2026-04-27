@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue';
 
-import AdSlot from '@/components/ads/AdSlot.vue';
 import GameGrid from '@/components/game/GameGrid.vue';
 import LeaderboardTable from '@/components/ranking/LeaderboardTable.vue';
 import { useGameStore } from '@/stores/game.store';
@@ -21,20 +20,21 @@ const recommendationGames = computed(() => {
 });
 const firstGridGames = computed(() => gameStore.games.slice(0, 4));
 const remainingGames = computed(() => gameStore.games.slice(4));
-const homeTopBannerRequested = ref(false);
+const homeAdsRequested = ref(false);
 
-function requestHomeTopBannerAd() {
-  if (homeTopBannerRequested.value) {
+function requestHomeAds() {
+  if (homeAdsRequested.value) {
     return;
   }
 
-  homeTopBannerRequested.value = true;
+  homeAdsRequested.value = true;
   try {
     window.adsbygoogle = window.adsbygoogle ?? [];
     window.adsbygoogle.push({});
+    window.adsbygoogle.push({});
   } catch (error) {
-    homeTopBannerRequested.value = false;
-    console.warn('Home top banner AdSense request failed', error);
+    homeAdsRequested.value = false;
+    console.warn('Home AdSense request failed', error);
   }
 }
 
@@ -44,7 +44,7 @@ onMounted(async () => {
     description: '추천 게임, 오늘의 랭킹, 광고 안전 영역을 갖춘 캐주얼 게임 포털 메인 페이지',
   });
   await nextTick();
-  requestHomeTopBannerAd();
+  requestHomeAds();
   await Promise.all([gameStore.loadGames(), rankingStore.loadGlobalRanking('daily')]);
 });
 </script>
@@ -134,7 +134,16 @@ onMounted(async () => {
         </div>
       </div>
       <GameGrid :games="firstGridGames" />
-      <AdSlot page="home" position="in-feed" />
+      <aside class="ad-slot home-in-feed-ad" data-position="in-feed" data-provider="adsense">
+        <ins
+          class="adsbygoogle ad-slot-unit"
+          style="display: block"
+          data-ad-format="fluid"
+          data-ad-layout-key="-fb+5w+4e-db+86"
+          data-ad-client="ca-pub-2016140648106882"
+          data-ad-slot="3255903663"
+        ></ins>
+      </aside>
       <GameGrid :games="remainingGames" />
     </section>
 
