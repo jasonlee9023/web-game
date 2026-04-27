@@ -87,11 +87,22 @@ EOF
   sudo systemctl reload nginx
 fi
 
-if [ -n "${CERTBOT_EMAIL}" ] && command -v apt-get >/dev/null 2>&1; then
+HAS_EXISTING_CERT="false"
+if [ -f /etc/letsencrypt/live/gamezip.kr/fullchain.pem ]; then
+  HAS_EXISTING_CERT="true"
+fi
+
+if { [ -n "${CERTBOT_EMAIL}" ] || [ "${HAS_EXISTING_CERT}" = "true" ]; } && command -v apt-get >/dev/null 2>&1; then
   sudo apt-get install -y certbot python3-certbot-nginx
-  sudo certbot --nginx --non-interactive --agree-tos --redirect \
-    --email "${CERTBOT_EMAIL}" \
-    -d gamezip.kr -d www.gamezip.kr || true
+
+  CERTBOT_ARGS=(--nginx --non-interactive --agree-tos --redirect -d gamezip.kr -d www.gamezip.kr)
+  if [ -n "${CERTBOT_EMAIL}" ]; then
+    CERTBOT_ARGS+=(--email "${CERTBOT_EMAIL}")
+  else
+    CERTBOT_ARGS+=(--register-unsafely-without-email)
+  fi
+
+  sudo certbot "${CERTBOT_ARGS[@]}" || true
 fi
 
 pm2 status web-game
