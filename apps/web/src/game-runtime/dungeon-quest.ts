@@ -179,24 +179,34 @@ const rootStyle = document.documentElement.style;
 const visualViewport = window.visualViewport;
 const coarsePointerMedia = window.matchMedia('(pointer: coarse)');
 const urlParams = new URLSearchParams(window.location.search);
+const startsInEditorMode = urlParams.get('editor') === '1';
 
 type ModelKey =
+  | 'banner'
   | 'barrel'
   | 'character-human'
   | 'character-orc'
   | 'chest'
   | 'coin'
   | 'column'
+  | 'dirt'
   | 'floor'
   | 'floor-detail'
   | 'gate'
   | 'rocks'
+  | 'shield-rectangle'
+  | 'shield-round'
   | 'stairs'
+  | 'stones'
   | 'trap'
   | 'wall'
   | 'wall-half'
+  | 'wall-narrow'
   | 'wall-opening'
-  | 'weapon-sword';
+  | 'weapon-spear'
+  | 'weapon-sword'
+  | 'wood-structure'
+  | 'wood-support';
 
 type CircleObstacle = {
   x: number;
@@ -269,10 +279,17 @@ type CharacterRig = {
 type EnemyUnit = {
   mesh: THREE.Group;
   weapon: THREE.Group;
+  shield: THREE.Group | null;
   rig: CharacterRig;
+  label: string;
   hp: number;
   maxHp: number;
   speed: number;
+  damage: number;
+  radius: number;
+  aggroRange: number;
+  attackRange: number;
+  attackIntervalMs: number;
   attackCooldownMs: number;
   hurtMs: number;
   home: THREE.Vector3;
@@ -319,6 +336,7 @@ type GameState = {
   score: number;
   totalTimeMs: number;
   elapsedMs: number;
+  levelIndex: number;
   health: number;
   maxHealth: number;
   mana: number;
@@ -474,11 +492,17 @@ type MapTool =
   | 'floor-detail'
   | 'wall'
   | 'wall-half'
+  | 'wall-narrow'
   | 'wall-opening'
+  | 'banner'
   | 'column'
   | 'barrel'
+  | 'dirt'
   | 'rocks'
+  | 'stones'
   | 'trap'
+  | 'wood-structure'
+  | 'wood-support'
   | 'coin'
   | 'enemy'
   | 'player-spawn'
@@ -517,11 +541,12 @@ type FloorTileConfig = GridPoint & {
 type WallSegmentConfig = GridPoint & {
   rotationQuarter: number;
   half?: boolean;
+  narrow?: boolean;
   opening?: boolean;
 };
 
 type PropConfig = GridPoint & {
-  key: 'column' | 'barrel' | 'rocks' | 'trap';
+  key: 'banner' | 'barrel' | 'column' | 'dirt' | 'rocks' | 'stones' | 'trap' | 'wood-structure' | 'wood-support';
   radius: number;
   rotationQuarter?: number;
 };
@@ -534,8 +559,21 @@ type EnemyConfig = GridPoint & {
   hp: number;
   speed: number;
   value: number;
+  kind?: EnemyKind;
+  weapon?: EnemyWeaponKey;
+  shield?: EnemyShieldKey;
+  damage?: number;
+  radius?: number;
+  aggroRange?: number;
+  attackRange?: number;
+  attackIntervalMs?: number;
+  scale?: number;
   rotationQuarter?: number;
 };
+
+type EnemyKind = 'guard' | 'scout' | 'spearman' | 'brute' | 'warden';
+type EnemyWeaponKey = 'sword' | 'spear';
+type EnemyShieldKey = 'round' | 'rectangle';
 
 type DungeonMapConfig = {
   floorTiles: FloorTileConfig[];
@@ -549,10 +587,19 @@ type DungeonMapConfig = {
   exit: GridPoint;
 };
 
+type DungeonLevelConfig = {
+  id: string;
+  name: string;
+  quest: string;
+  intro: string;
+  clearText: string;
+  map: DungeonMapConfig;
+};
+
 const MODEL_ROOT = '/assets/dungeon-quest/models';
 const ANIMATION_ROOT = '/assets/dungeon-quest/anims';
 const WEAPON_EDITOR_STORAGE_KEY = 'dungeon-quest:weapon-editor:v1';
-const MAP_EDITOR_STORAGE_KEY = 'dungeon-quest:map-editor:v2';
+const MAP_EDITOR_STORAGE_KEY = 'dungeon-quest:map-editor:v3';
 const SOUND_SETTINGS_STORAGE_KEY = 'dungeon-quest:sound:v1';
 const MUSIC_STEP_SECONDS = 0.38;
 const MUSIC_BASS_NOTES = [110, 123.47, 98, 110, 130.81, 146.83, 110, 98];
@@ -589,11 +636,17 @@ const MAP_TOOL_LABELS: Record<MapTool, string> = {
   'floor-detail': 'Floor Detail',
   wall: 'Wall',
   'wall-half': 'Wall Half',
+  'wall-narrow': 'Wall Narrow',
   'wall-opening': 'Wall Opening',
+  banner: 'Banner',
   column: 'Column',
   barrel: 'Barrel',
+  dirt: 'Dirt',
   rocks: 'Rocks',
+  stones: 'Stones',
   trap: 'Trap',
+  'wood-structure': 'Wood Structure',
+  'wood-support': 'Wood Support',
   coin: 'Coin',
   enemy: 'Enemy',
   'player-spawn': 'Player Spawn',
@@ -601,7 +654,8 @@ const MAP_TOOL_LABELS: Record<MapTool, string> = {
   gate: 'Gate',
   exit: 'Exit',
 };
-const DEFAULT_MAP_CONFIG = createDefaultMapConfig();
+const DUNGEON_LEVELS = createDungeonLevels();
+const DEFAULT_MAP_CONFIG = cloneMapConfig(DUNGEON_LEVELS[0]?.map ?? createDefaultMapConfig());
 const ROOM_BOUNDS = {
   minX: -10.4,
   maxX: 10.4,
@@ -614,6 +668,7 @@ const ENEMY_RADIUS = 0.38;
 const DUEL_MELEE_DAMAGE = 18;
 const DUEL_MAGIC_DAMAGE = 14;
 const DUEL_TOTAL_TIME_MS = 180_000;
+const SOLO_TOTAL_TIME_MS = 420_000;
 const P2P_SNAPSHOT_INTERVAL_MS = 60;
 const DEFAULT_P2P_HELP_TEXT =
   '로비에서 방을 만들면 서버가 offer/answer 신호를 중계합니다. 호스트 heartbeat가 멈추면 방은 자동으로 정리됩니다.';
@@ -762,8 +817,9 @@ const state: GameState = {
   reviveAvailable: true,
   finalized: false,
   score: 0,
-  totalTimeMs: 240_000,
+  totalTimeMs: SOLO_TOTAL_TIME_MS,
   elapsedMs: 0,
+  levelIndex: 0,
   health: 100,
   maxHealth: 100,
   mana: 80,
@@ -788,7 +844,7 @@ const audioState: AudioSystem = {
   nextMusicTime: 0,
   musicStep: 0,
 };
-const dungeonMapConfig = loadMapConfig();
+let dungeonMapConfig = startsInEditorMode ? loadMapConfig() : cloneMapConfig(DEFAULT_MAP_CONFIG);
 const weaponEditorState = loadWeaponEditorState();
 let currentEditorMode: EditorMode = 'transform';
 let p2pHelpFlashMessage: string | null = null;
@@ -798,7 +854,7 @@ let currentMapTool: MapTool = 'floor';
 let currentMapRotationQuarter = 0;
 let currentHoverPoint: GridPoint | null = null;
 let pursuedEnemy: EnemyUnit | null = null;
-let editorVisible = urlParams.get('editor') === '1';
+let editorVisible = startsInEditorMode;
 let utilityMenuOpen = false;
 let pursuedRemotePeer = false;
 let remotePeerAvatar: RemotePeerAvatar | null = null;
@@ -847,11 +903,35 @@ function cloneMapConfig(source: DungeonMapConfig): DungeonMapConfig {
   };
 }
 
-function createDefaultMapConfig(): DungeonMapConfig {
+function pushHorizontalWalls(
+  walls: WallSegmentConfig[],
+  z: number,
+  fromX: number,
+  toX: number,
+  options: Partial<Pick<WallSegmentConfig, 'half' | 'narrow' | 'opening'>> = {},
+) {
+  for (let x = fromX; x <= toX; x += 1) {
+    walls.push({ x, z, rotationQuarter: 0, ...options });
+  }
+}
+
+function pushVerticalWalls(
+  walls: WallSegmentConfig[],
+  x: number,
+  fromZ: number,
+  toZ: number,
+  options: Partial<Pick<WallSegmentConfig, 'half' | 'narrow' | 'opening'>> = {},
+) {
+  for (let z = fromZ; z <= toZ; z += 1) {
+    walls.push({ x, z, rotationQuarter: 1, ...options });
+  }
+}
+
+function createRoomShell(detailOffset = 0) {
   const floorTiles: FloorTileConfig[] = [];
   for (let x = -10; x <= 10; x += 1) {
     for (let z = -12; z <= 11; z += 1) {
-      floorTiles.push({ x, z, detail: Math.abs(x + z) % 4 === 0 });
+      floorTiles.push({ x, z, detail: Math.abs(x * 2 + z + detailOffset) % 5 === 0 });
     }
   }
 
@@ -871,60 +951,318 @@ function createDefaultMapConfig(): DungeonMapConfig {
   walls.push({ x: -1.5, z: -11.5, rotationQuarter: 0, half: true });
   walls.push({ x: 1.5, z: -11.5, rotationQuarter: 0, half: true });
 
-  return {
-    floorTiles,
-    walls,
-    props: [
-      { key: 'column', x: -6.4, z: -4.1, radius: 0.44, rotationQuarter: 0 },
-      { key: 'column', x: 6.4, z: -4.1, radius: 0.44, rotationQuarter: 0 },
-      { key: 'column', x: -6.4, z: 4.1, radius: 0.44, rotationQuarter: 0 },
-      { key: 'column', x: 6.4, z: 4.1, radius: 0.44, rotationQuarter: 0 },
-      { key: 'column', x: -2.5, z: -0.8, radius: 0.44, rotationQuarter: 0 },
-      { key: 'column', x: 2.5, z: -0.8, radius: 0.44, rotationQuarter: 0 },
-      { key: 'barrel', x: 8.2, z: 6.8, radius: 0.42, rotationQuarter: 0 },
-      { key: 'barrel', x: -8.1, z: 6.5, radius: 0.42, rotationQuarter: 0 },
-      { key: 'barrel', x: 8.1, z: -7.1, radius: 0.42, rotationQuarter: 0 },
-      { key: 'barrel', x: -8.2, z: -7.4, radius: 0.42, rotationQuarter: 0 },
-      { key: 'rocks', x: -4.8, z: -8.2, radius: 0.58, rotationQuarter: 0 },
-      { key: 'rocks', x: 4.9, z: -8.0, radius: 0.58, rotationQuarter: 0 },
-      { key: 'rocks', x: -7.4, z: 1.8, radius: 0.58, rotationQuarter: 0 },
-      { key: 'rocks', x: 7.3, z: 2.1, radius: 0.58, rotationQuarter: 0 },
-      { key: 'trap', x: 0, z: 3.4, radius: 0.52, rotationQuarter: 0 },
-      { key: 'trap', x: 0, z: -4.3, radius: 0.52, rotationQuarter: 0 },
-      { key: 'trap', x: -3.2, z: 7.1, radius: 0.52, rotationQuarter: 0 },
-      { key: 'trap', x: 3.2, z: 7.1, radius: 0.52, rotationQuarter: 0 },
-    ],
-    coins: [
-      { x: -9.1, z: 9.0, value: 80 },
-      { x: -6.1, z: 4.7, value: 80 },
-      { x: -4.0, z: -5.9, value: 80 },
-      { x: -1.5, z: 1.2, value: 80 },
-      { x: 0.6, z: -10.1, value: 80 },
-      { x: 1.9, z: -8.9, value: 80 },
-      { x: 3.6, z: 6.7, value: 80 },
-      { x: 5.6, z: 1.5, value: 80 },
-      { x: 6.7, z: -3.7, value: 80 },
-      { x: 7.9, z: -9.3, value: 80 },
-      { x: 8.9, z: 8.7, value: 80 },
-      { x: -8.8, z: -1.3, value: 80 },
-      { x: -6.8, z: -9.5, value: 80 },
-      { x: -2.4, z: 8.4, value: 80 },
-    ],
-    enemies: [
-      { x: -8.2, z: -8.5, rotationQuarter: 0, hp: 4, speed: 1.22, value: 155 },
-      { x: 8.1, z: -8.4, rotationQuarter: 0, hp: 4, speed: 1.24, value: 155 },
-      { x: -7.8, z: 7.4, rotationQuarter: 0, hp: 4, speed: 1.26, value: 155 },
-      { x: 8.0, z: 7.3, rotationQuarter: 0, hp: 4, speed: 1.28, value: 155 },
-      { x: -4.6, z: 3.6, rotationQuarter: 0, hp: 3, speed: 1.33, value: 155 },
-      { x: 4.8, z: 3.5, rotationQuarter: 0, hp: 3, speed: 1.35, value: 155 },
-      { x: -3.8, z: -2.6, rotationQuarter: 0, hp: 3, speed: 1.39, value: 155 },
-      { x: 3.9, z: -2.4, rotationQuarter: 0, hp: 3, speed: 1.41, value: 155 },
-    ],
-    playerSpawn: { x: 0, z: 9.35 },
-    chest: { x: 0, z: -1.8 },
-    gate: { x: 0, z: -11.55 },
-    exit: { x: 0, z: -12.35 },
+  return { floorTiles, walls };
+}
+
+function createEnemy(
+  kind: EnemyKind,
+  x: number,
+  z: number,
+  overrides: Partial<Omit<EnemyConfig, 'kind' | 'x' | 'z'>> = {},
+) {
+  const archetypes: Record<EnemyKind, Omit<EnemyConfig, 'x' | 'z'>> = {
+    guard: {
+      kind: 'guard',
+      hp: 3,
+      speed: 1.28,
+      value: 150,
+      weapon: 'sword',
+      damage: 14,
+      attackIntervalMs: 1220,
+      aggroRange: 4.7,
+      attackRange: 1.16,
+      radius: 0.38,
+    },
+    scout: {
+      kind: 'scout',
+      hp: 2,
+      speed: 1.72,
+      value: 140,
+      weapon: 'sword',
+      damage: 11,
+      attackIntervalMs: 920,
+      aggroRange: 5.8,
+      attackRange: 1.1,
+      radius: 0.34,
+      scale: 0.92,
+    },
+    spearman: {
+      kind: 'spearman',
+      hp: 3,
+      speed: 1.38,
+      value: 190,
+      weapon: 'spear',
+      damage: 16,
+      attackIntervalMs: 1320,
+      aggroRange: 5.3,
+      attackRange: 1.42,
+      radius: 0.39,
+      scale: 1.02,
+    },
+    brute: {
+      kind: 'brute',
+      hp: 6,
+      speed: 1.04,
+      value: 260,
+      weapon: 'sword',
+      shield: 'round',
+      damage: 20,
+      attackIntervalMs: 1500,
+      aggroRange: 4.2,
+      attackRange: 1.24,
+      radius: 0.46,
+      scale: 1.16,
+    },
+    warden: {
+      kind: 'warden',
+      hp: 12,
+      speed: 1.12,
+      value: 720,
+      weapon: 'spear',
+      shield: 'rectangle',
+      damage: 24,
+      attackIntervalMs: 1380,
+      aggroRange: 6.4,
+      attackRange: 1.54,
+      radius: 0.52,
+      scale: 1.28,
+    },
   };
+
+  return {
+    x,
+    z,
+    ...archetypes[kind],
+    ...overrides,
+    kind,
+  } satisfies EnemyConfig;
+}
+
+function createDefaultMapConfig(): DungeonMapConfig {
+  return cloneMapConfig(createDungeonLevels()[0].map);
+}
+
+function createDungeonLevels(): DungeonLevelConfig[] {
+  const entrance = createRoomShell(0);
+  pushHorizontalWalls(entrance.walls, 3.5, -8, -4, { half: true });
+  pushHorizontalWalls(entrance.walls, 3.5, 4, 8, { half: true });
+  pushHorizontalWalls(entrance.walls, -3.5, -7, -5, { narrow: true });
+  pushHorizontalWalls(entrance.walls, -3.5, 5, 7, { narrow: true });
+
+  const quarry = createRoomShell(2);
+  pushVerticalWalls(quarry.walls, -4.5, -9, -6, { narrow: true });
+  pushVerticalWalls(quarry.walls, 4.5, -9, -6, { narrow: true });
+  pushHorizontalWalls(quarry.walls, -1.5, -9, -6, { half: true });
+  pushHorizontalWalls(quarry.walls, -1.5, 6, 9, { half: true });
+  pushVerticalWalls(quarry.walls, 0.5, 2, 6, { opening: true });
+
+  const vault = createRoomShell(4);
+  pushVerticalWalls(vault.walls, -6.5, -7, 5, { narrow: true });
+  pushVerticalWalls(vault.walls, 6.5, -7, 5, { narrow: true });
+  pushHorizontalWalls(vault.walls, 5.5, -6, -2, { half: true });
+  pushHorizontalWalls(vault.walls, 5.5, 2, 6, { half: true });
+  pushHorizontalWalls(vault.walls, -5.5, -5, -2, { narrow: true });
+  pushHorizontalWalls(vault.walls, -5.5, 2, 5, { narrow: true });
+
+  const keep = createRoomShell(6);
+  pushHorizontalWalls(keep.walls, 6.5, -8, -5, { narrow: true });
+  pushHorizontalWalls(keep.walls, 6.5, 5, 8, { narrow: true });
+  pushVerticalWalls(keep.walls, -7.5, -6, 2, { half: true });
+  pushVerticalWalls(keep.walls, 7.5, -6, 2, { half: true });
+  pushHorizontalWalls(keep.walls, -6.5, -3, 3, { half: true });
+
+  return [{
+    id: 'gate-hall',
+    name: '입구 회랑',
+    quest: '흩어진 경비를 제압하고 첫 보물상자를 여세요.',
+    intro: '1층 입구 회랑입니다. 기본 경비를 정리하고 북쪽 통로를 여세요.',
+    clearText: '입구 회랑 돌파. 무너진 채석장으로 내려갑니다.',
+    map: {
+      ...entrance,
+      props: [
+        { key: 'column', x: -6.4, z: -4.1, radius: 0.44, rotationQuarter: 0 },
+        { key: 'column', x: 6.4, z: -4.1, radius: 0.44, rotationQuarter: 0 },
+        { key: 'column', x: -6.4, z: 4.1, radius: 0.44, rotationQuarter: 0 },
+        { key: 'column', x: 6.4, z: 4.1, radius: 0.44, rotationQuarter: 0 },
+        { key: 'barrel', x: 8.2, z: 6.8, radius: 0.42, rotationQuarter: 0 },
+        { key: 'barrel', x: -8.1, z: 6.5, radius: 0.42, rotationQuarter: 0 },
+        { key: 'rocks', x: -4.8, z: -8.2, radius: 0.58, rotationQuarter: 0 },
+        { key: 'rocks', x: 4.9, z: -8.0, radius: 0.58, rotationQuarter: 0 },
+        { key: 'banner', x: -2.2, z: -10.5, radius: 0.18, rotationQuarter: 0 },
+        { key: 'banner', x: 2.2, z: -10.5, radius: 0.18, rotationQuarter: 0 },
+      ],
+      coins: [
+        { x: -9.1, z: 9.0, value: 70 },
+        { x: -6.1, z: 4.7, value: 70 },
+        { x: -4.0, z: -5.9, value: 70 },
+        { x: -1.5, z: 1.2, value: 70 },
+        { x: 1.9, z: -8.9, value: 70 },
+        { x: 3.6, z: 6.7, value: 70 },
+        { x: 6.7, z: -3.7, value: 70 },
+        { x: 8.9, z: 8.7, value: 70 },
+      ],
+      enemies: [
+        createEnemy('guard', -8.2, -8.5),
+        createEnemy('guard', 8.1, -8.4),
+        createEnemy('guard', -7.8, 7.4),
+        createEnemy('guard', 8.0, 7.3),
+        createEnemy('scout', -3.8, -2.6),
+        createEnemy('scout', 3.9, -2.4),
+      ],
+      playerSpawn: { x: 0, z: 9.35 },
+      chest: { x: 0, z: -1.8 },
+      gate: { x: 0, z: -11.55 },
+      exit: { x: 0, z: -12.35 },
+    },
+  },
+  {
+    id: 'broken-quarry',
+    name: '무너진 채석장',
+    quest: '잔해와 함정을 지나 빠른 정찰병을 끊어내세요.',
+    intro: '2층은 무너진 채석장입니다. 흙바닥, 돌무더기, 함정이 길을 좁힙니다.',
+    clearText: '채석장 통로 확보. 오래된 금고로 진입합니다.',
+    map: {
+      ...quarry,
+      props: [
+        { key: 'dirt', x: -8, z: -8, radius: 0, rotationQuarter: 0 },
+        { key: 'dirt', x: -7, z: -8, radius: 0, rotationQuarter: 0 },
+        { key: 'dirt', x: 7, z: -7, radius: 0, rotationQuarter: 0 },
+        { key: 'stones', x: -6.8, z: -6.4, radius: 0.54, rotationQuarter: 1 },
+        { key: 'stones', x: 6.8, z: -6.1, radius: 0.54, rotationQuarter: 0 },
+        { key: 'rocks', x: -8.2, z: 1.6, radius: 0.58, rotationQuarter: 0 },
+        { key: 'rocks', x: 8.0, z: 1.4, radius: 0.58, rotationQuarter: 0 },
+        { key: 'wood-support', x: -4.7, z: 7.2, radius: 0.34, rotationQuarter: 1 },
+        { key: 'wood-support', x: 4.7, z: 7.2, radius: 0.34, rotationQuarter: 3 },
+        { key: 'wood-structure', x: 0, z: -8.0, radius: 0.62, rotationQuarter: 0 },
+        { key: 'trap', x: -2.5, z: 2.8, radius: 0.52, rotationQuarter: 0 },
+        { key: 'trap', x: 2.5, z: 2.8, radius: 0.52, rotationQuarter: 0 },
+        { key: 'trap', x: 0, z: -4.7, radius: 0.52, rotationQuarter: 0 },
+      ],
+      coins: [
+        { x: -8.9, z: 8.8, value: 85 },
+        { x: -6.2, z: -2.8, value: 85 },
+        { x: -4.2, z: -8.6, value: 85 },
+        { x: -1.2, z: 5.9, value: 85 },
+        { x: 1.4, z: -9.4, value: 85 },
+        { x: 4.8, z: 5.6, value: 85 },
+        { x: 7.9, z: -2.5, value: 85 },
+        { x: 8.4, z: 8.2, value: 85 },
+        { x: 0, z: -0.2, value: 120 },
+      ],
+      enemies: [
+        createEnemy('scout', -7.7, 7.4),
+        createEnemy('scout', 7.7, 7.2),
+        createEnemy('spearman', -7.3, -7.4),
+        createEnemy('spearman', 7.2, -7.2),
+        createEnemy('guard', -3.0, 0.6),
+        createEnemy('guard', 3.0, 0.8),
+        createEnemy('brute', 0, -7.0, { hp: 5, value: 235 }),
+      ],
+      playerSpawn: { x: 0, z: 9.3 },
+      chest: { x: 0, z: -2.2 },
+      gate: { x: 0, z: -11.55 },
+      exit: { x: 0, z: -12.35 },
+    },
+  },
+  {
+    id: 'old-vault',
+    name: '오래된 금고',
+    quest: '방패병과 창병을 분리해서 금고 중심을 장악하세요.',
+    intro: '3층 금고입니다. 방패병이 길목을 막고 창병이 긴 사거리로 압박합니다.',
+    clearText: '금고 봉인 해제. 마지막 오크 대장 방으로 향합니다.',
+    map: {
+      ...vault,
+      props: [
+        { key: 'column', x: -4.2, z: -6.8, radius: 0.44, rotationQuarter: 0 },
+        { key: 'column', x: 4.2, z: -6.8, radius: 0.44, rotationQuarter: 0 },
+        { key: 'column', x: -4.2, z: 1.2, radius: 0.44, rotationQuarter: 0 },
+        { key: 'column', x: 4.2, z: 1.2, radius: 0.44, rotationQuarter: 0 },
+        { key: 'barrel', x: -8.0, z: 8.4, radius: 0.42, rotationQuarter: 0 },
+        { key: 'barrel', x: 8.0, z: 8.4, radius: 0.42, rotationQuarter: 0 },
+        { key: 'stones', x: -8.4, z: -3.4, radius: 0.54, rotationQuarter: 0 },
+        { key: 'stones', x: 8.4, z: -3.4, radius: 0.54, rotationQuarter: 0 },
+        { key: 'trap', x: -2.2, z: -3.8, radius: 0.52, rotationQuarter: 0 },
+        { key: 'trap', x: 2.2, z: -3.8, radius: 0.52, rotationQuarter: 0 },
+        { key: 'banner', x: -1.8, z: -10.4, radius: 0.18, rotationQuarter: 0 },
+        { key: 'banner', x: 1.8, z: -10.4, radius: 0.18, rotationQuarter: 0 },
+      ],
+      coins: [
+        { x: -8.6, z: 8.7, value: 95 },
+        { x: -8.1, z: -6.2, value: 95 },
+        { x: -5.2, z: 2.4, value: 95 },
+        { x: -2.0, z: -8.6, value: 95 },
+        { x: 0, z: 5.8, value: 130 },
+        { x: 2.0, z: -8.6, value: 95 },
+        { x: 5.2, z: 2.4, value: 95 },
+        { x: 8.1, z: -6.2, value: 95 },
+        { x: 8.6, z: 8.7, value: 95 },
+      ],
+      enemies: [
+        createEnemy('brute', -7.8, 6.6),
+        createEnemy('brute', 7.8, 6.6),
+        createEnemy('spearman', -7.8, -6.4),
+        createEnemy('spearman', 7.8, -6.4),
+        createEnemy('guard', -2.2, 1.0),
+        createEnemy('guard', 2.2, 1.0),
+        createEnemy('scout', -1.8, -8.4),
+        createEnemy('scout', 1.8, -8.4),
+      ],
+      playerSpawn: { x: 0, z: 9.2 },
+      chest: { x: 0, z: -1.2 },
+      gate: { x: 0, z: -11.55 },
+      exit: { x: 0, z: -12.35 },
+    },
+  },
+  {
+    id: 'orc-keep',
+    name: '오크 대장 방',
+    quest: '대장을 호위병과 떼어내고 마지막 상자를 여세요.',
+    intro: '최종층입니다. 오크 대장과 호위대가 북쪽 성소를 지키고 있습니다.',
+    clearText: '오크 대장을 쓰러뜨렸습니다. 출구 계단으로 탈출하세요.',
+    map: {
+      ...keep,
+      props: [
+        { key: 'banner', x: -4.8, z: -9.7, radius: 0.18, rotationQuarter: 0 },
+        { key: 'banner', x: 4.8, z: -9.7, radius: 0.18, rotationQuarter: 0 },
+        { key: 'column', x: -6.0, z: -3.4, radius: 0.44, rotationQuarter: 0 },
+        { key: 'column', x: 6.0, z: -3.4, radius: 0.44, rotationQuarter: 0 },
+        { key: 'column', x: -3.4, z: 3.2, radius: 0.44, rotationQuarter: 0 },
+        { key: 'column', x: 3.4, z: 3.2, radius: 0.44, rotationQuarter: 0 },
+        { key: 'wood-structure', x: -8.1, z: 8.0, radius: 0.62, rotationQuarter: 1 },
+        { key: 'wood-structure', x: 8.1, z: 8.0, radius: 0.62, rotationQuarter: 3 },
+        { key: 'barrel', x: -8.0, z: -7.8, radius: 0.42, rotationQuarter: 0 },
+        { key: 'barrel', x: 8.0, z: -7.8, radius: 0.42, rotationQuarter: 0 },
+        { key: 'trap', x: -2.7, z: -5.0, radius: 0.52, rotationQuarter: 0 },
+        { key: 'trap', x: 2.7, z: -5.0, radius: 0.52, rotationQuarter: 0 },
+        { key: 'stones', x: 0, z: 7.0, radius: 0.54, rotationQuarter: 0 },
+      ],
+      coins: [
+        { x: -8.5, z: 8.6, value: 120 },
+        { x: -7.2, z: -6.6, value: 120 },
+        { x: -4.0, z: 0.2, value: 120 },
+        { x: -1.3, z: -9.0, value: 150 },
+        { x: 1.3, z: -9.0, value: 150 },
+        { x: 4.0, z: 0.2, value: 120 },
+        { x: 7.2, z: -6.6, value: 120 },
+        { x: 8.5, z: 8.6, value: 120 },
+      ],
+      enemies: [
+        createEnemy('warden', 0, -7.2, { rotationQuarter: 2 }),
+        createEnemy('brute', -5.8, -5.1),
+        createEnemy('brute', 5.8, -5.1),
+        createEnemy('spearman', -7.6, 1.2),
+        createEnemy('spearman', 7.6, 1.2),
+        createEnemy('guard', -4.8, 6.8),
+        createEnemy('guard', 4.8, 6.8),
+        createEnemy('scout', -1.8, 4.2),
+        createEnemy('scout', 1.8, 4.2),
+      ],
+      playerSpawn: { x: 0, z: 9.4 },
+      chest: { x: 0, z: -3.2 },
+      gate: { x: 0, z: -11.55 },
+      exit: { x: 0, z: -12.35 },
+    },
+  }];
 }
 
 function loadMapConfig() {
@@ -954,6 +1292,27 @@ function loadMapConfig() {
 
 function persistMapConfig() {
   window.localStorage.setItem(MAP_EDITOR_STORAGE_KEY, JSON.stringify(dungeonMapConfig));
+}
+
+function isCustomMapMode() {
+  return startsInEditorMode;
+}
+
+function getActiveLevel() {
+  return DUNGEON_LEVELS[state.levelIndex] ?? DUNGEON_LEVELS[0];
+}
+
+function applyLevelMap(levelIndex: number) {
+  if (isCustomMapMode()) {
+    return;
+  }
+
+  const level = DUNGEON_LEVELS[levelIndex] ?? DUNGEON_LEVELS[0];
+  dungeonMapConfig = cloneMapConfig(level.map);
+}
+
+function isFinalLevel() {
+  return state.levelIndex >= DUNGEON_LEVELS.length - 1;
 }
 
 function loadSoundEnabled() {
@@ -1759,8 +2118,8 @@ function leaveDuelMode() {
   gameMode = 'solo';
   pursuedRemotePeer = false;
   remotePeerAvatar = null;
-  createSceneAssets();
   resetState();
+  createSceneAssets();
   updateCamera();
   syncHud();
 }
@@ -2410,7 +2769,7 @@ function renderEditorControls() {
 }
 
 function resetMapConfig() {
-  const defaults = cloneMapConfig(DEFAULT_MAP_CONFIG);
+  const defaults = cloneMapConfig(getActiveLevel()?.map ?? DEFAULT_MAP_CONFIG);
   dungeonMapConfig.floorTiles = defaults.floorTiles;
   dungeonMapConfig.walls = defaults.walls;
   dungeonMapConfig.props = defaults.props;
@@ -2475,8 +2834,8 @@ function mountEditorUi() {
     }
 
     resetMapConfig();
+    resetState({ preserveLevel: true, preserveMap: true });
     createSceneAssets();
-    resetState();
     updateCamera();
     syncHud();
     renderEditorControls();
@@ -2727,22 +3086,31 @@ async function loadHumanRollAnimation() {
 
 async function loadTemplates() {
   const keys: ModelKey[] = [
+    'banner',
     'barrel',
     'character-human',
     'character-orc',
     'chest',
     'coin',
     'column',
+    'dirt',
     'floor',
     'floor-detail',
     'gate',
     'rocks',
+    'shield-rectangle',
+    'shield-round',
     'stairs',
+    'stones',
     'trap',
     'wall',
     'wall-half',
+    'wall-narrow',
     'wall-opening',
+    'weapon-spear',
     'weapon-sword',
+    'wood-structure',
+    'wood-support',
   ];
 
   await Promise.all(
@@ -2837,6 +3205,51 @@ function attachWeaponToRightArm(mesh: THREE.Group, weapon: THREE.Group) {
   mount.add(weapon);
 
   return mount;
+}
+
+function tuneEnemyWeapon(weapon: THREE.Group, weaponKey: EnemyWeaponKey) {
+  if (weaponKey !== 'spear') {
+    return;
+  }
+
+  weapon.position.y -= 0.04;
+  weapon.rotation.z += degToRad(8);
+  weapon.scale.multiplyScalar(1.14);
+}
+
+function attachShieldToLeftArm(mesh: THREE.Group, shield: THREE.Group, shieldKey: EnemyShieldKey) {
+  const mount = new THREE.Group();
+  mount.name = 'shield-mount';
+  const armLeft = mesh.getObjectByName('arm-left');
+
+  if (armLeft) {
+    armLeft.add(mount);
+  } else {
+    mesh.add(mount);
+  }
+
+  mount.position.set(0.14, 0.08, 0.02);
+  mount.rotation.set(degToRad(16), degToRad(-42), degToRad(72));
+  shield.position.set(0, 0, 0);
+  shield.rotation.set(degToRad(2), degToRad(0), degToRad(shieldKey === 'rectangle' ? 88 : 78));
+  shield.scale.setScalar(shieldKey === 'rectangle' ? 1.1 : 0.92);
+  mount.add(shield);
+  return mount;
+}
+
+function getEnemyLabel(kind: EnemyKind | undefined) {
+  switch (kind) {
+    case 'scout':
+      return '정찰병';
+    case 'spearman':
+      return '창병';
+    case 'brute':
+      return '방패병';
+    case 'warden':
+      return '오크 대장';
+    default:
+      return '오크 경비병';
+  }
 }
 
 function createCharacterRig(
@@ -3332,8 +3745,8 @@ function addFloorTile(world: THREE.Group, x: number, z: number, detail = false) 
   world.add(tile);
 }
 
-function addWallSegment(world: THREE.Group, x: number, z: number, rotationY = 0, half = false, opening = false) {
-  const wall = cloneTemplate(opening ? 'wall-opening' : half ? 'wall-half' : 'wall');
+function addWallSegment(world: THREE.Group, x: number, z: number, rotationY = 0, half = false, opening = false, narrow = false) {
+  const wall = cloneTemplate(opening ? 'wall-opening' : half ? 'wall-half' : narrow ? 'wall-narrow' : 'wall');
   wall.position.set(x, 0, z);
   wall.rotation.y = rotationY;
   world.add(wall);
@@ -3353,27 +3766,37 @@ function getMapPointVector(point: GridPoint, y = 0) {
 
 function getPropRadius(key: PropConfig['key']) {
   switch (key) {
+    case 'banner':
+      return 0.18;
     case 'column':
       return 0.44;
     case 'barrel':
       return 0.42;
+    case 'dirt':
+      return 0;
     case 'rocks':
       return 0.58;
+    case 'stones':
+      return 0.54;
     case 'trap':
       return 0.52;
+    case 'wood-structure':
+      return 0.62;
+    case 'wood-support':
+      return 0.34;
     default:
       return 0.4;
   }
 }
 
 function isWallLikeTool(tool: MapTool) {
-  return tool === 'wall' || tool === 'wall-half' || tool === 'wall-opening' || tool === 'gate';
+  return tool === 'wall' || tool === 'wall-half' || tool === 'wall-narrow' || tool === 'wall-opening' || tool === 'gate';
 }
 
 function snapCenterPoint(point: THREE.Vector3) {
   return {
-    x: THREE.MathUtils.clamp(Math.round(point.x), -5, 5),
-    z: THREE.MathUtils.clamp(Math.round(point.z), -6, 5),
+    x: THREE.MathUtils.clamp(Math.round(point.x), -10, 10),
+    z: THREE.MathUtils.clamp(Math.round(point.z), -12, 11),
   } satisfies GridPoint;
 }
 
@@ -3381,27 +3804,27 @@ function snapWallPoint(point: THREE.Vector3, rotationQuarter: number) {
   const vertical = THREE.MathUtils.euclideanModulo(rotationQuarter, 2) === 1;
   return vertical
     ? ({
-        x: THREE.MathUtils.clamp(Math.floor(point.x) + 0.5, -5.5, 5.5),
-        z: THREE.MathUtils.clamp(Math.round(point.z), -5, 5),
+        x: THREE.MathUtils.clamp(Math.floor(point.x) + 0.5, -10.5, 10.5),
+        z: THREE.MathUtils.clamp(Math.round(point.z), -11, 11),
       } satisfies GridPoint)
     : ({
-        x: THREE.MathUtils.clamp(Math.round(point.x), -5, 5),
-        z: THREE.MathUtils.clamp(Math.floor(point.z) + 0.5, -6.5, 5.5),
+        x: THREE.MathUtils.clamp(Math.round(point.x), -10, 10),
+        z: THREE.MathUtils.clamp(Math.floor(point.z) + 0.5, -11.5, 11.5),
       } satisfies GridPoint);
 }
 
 function getSnappedPointForTool(point: THREE.Vector3, tool: MapTool, rotationQuarter = currentMapRotationQuarter) {
   if (tool === 'gate') {
     return {
-      x: THREE.MathUtils.clamp(Math.round(point.x), -5, 5),
-      z: -5.5,
+      x: THREE.MathUtils.clamp(Math.round(point.x), -10, 10),
+      z: -11.55,
     } satisfies GridPoint;
   }
 
   if (tool === 'exit') {
     return {
-      x: THREE.MathUtils.clamp(Math.round(point.x), -5, 5),
-      z: -6.35,
+      x: THREE.MathUtils.clamp(Math.round(point.x), -10, 10),
+      z: -12.35,
     } satisfies GridPoint;
   }
 
@@ -3469,8 +3892,8 @@ function getGroundPointFromClient(clientX: number, clientY: number) {
 }
 
 function rebuildSceneFromMapEdit(message: string) {
+  resetState({ preserveLevel: true, preserveMap: true });
   createSceneAssets();
-  resetState();
   updateCamera();
   syncHud();
   renderEditorControls();
@@ -3583,6 +4006,7 @@ function applyMapToolAtPoint(point: THREE.Vector3, erase = false) {
     }
     case 'wall':
     case 'wall-half':
+    case 'wall-narrow':
     case 'wall-opening': {
       dungeonMapConfig.walls = dungeonMapConfig.walls.filter(
         (wall) => Math.abs(wall.x - snapped.x) > 0.001 || Math.abs(wall.z - snapped.z) > 0.001,
@@ -3591,13 +4015,19 @@ function applyMapToolAtPoint(point: THREE.Vector3, erase = false) {
         ...snapped,
         rotationQuarter: currentMapRotationQuarter,
         half: currentMapTool === 'wall-half',
+        narrow: currentMapTool === 'wall-narrow',
         opening: currentMapTool === 'wall-opening',
       });
       break;
     }
     case 'column':
+    case 'banner':
     case 'barrel':
+    case 'dirt':
     case 'rocks':
+    case 'stones':
+    case 'wood-structure':
+    case 'wood-support':
     case 'trap': {
       dungeonMapConfig.props = dungeonMapConfig.props.filter(
         (prop) => Math.abs(prop.x - snapped.x) > 0.001 || Math.abs(prop.z - snapped.z) > 0.001,
@@ -3670,6 +4100,7 @@ function buildEnvironment() {
       rotationQuarterToRadians(wall.rotationQuarter),
       wall.half,
       wall.opening,
+      wall.narrow,
     );
   }
 
@@ -3695,7 +4126,9 @@ function buildEnvironment() {
     mesh.position.copy(getMapPointVector(prop));
     mesh.rotation.y = rotationQuarterToRadians(prop.rotationQuarter);
     world.add(mesh);
-    addCircularObstacle(prop.x, prop.z, prop.radius);
+    if (prop.radius > 0) {
+      addCircularObstacle(prop.x, prop.z, prop.radius);
+    }
   }
 
   if (!isDuelMode) {
@@ -3708,11 +4141,12 @@ function buildEnvironment() {
     }
     const vertical = THREE.MathUtils.euclideanModulo(wall.rotationQuarter, 2) === 1;
     const offsets = wall.half ? [0] : [-0.34, 0, 0.34];
+    const radius = wall.half ? 0.24 : wall.narrow ? 0.18 : 0.22;
     for (const offset of offsets) {
       addCircularObstacle(
         vertical ? wall.x : wall.x + offset,
         vertical ? wall.z + offset : wall.z,
-        wall.half ? 0.24 : 0.22,
+        radius,
       );
     }
   }
@@ -3733,20 +4167,35 @@ function buildEnvironment() {
 
     dungeonMapConfig.enemies.forEach((spot, index) => {
       const mesh = cloneTemplate('character-orc', true);
-      const weapon = cloneTemplate('weapon-sword');
+      const weaponKey = spot.weapon ?? (spot.kind === 'spearman' || spot.kind === 'warden' ? 'spear' : 'sword');
+      const shieldKey = spot.shield ?? (spot.kind === 'brute' ? 'round' : spot.kind === 'warden' ? 'rectangle' : undefined);
+      const weapon = cloneTemplate(weaponKey === 'spear' ? 'weapon-spear' : 'weapon-sword');
+      const shield = shieldKey ? cloneTemplate(shieldKey === 'rectangle' ? 'shield-rectangle' : 'shield-round') : null;
       const animations = getTemplateAnimations('character-orc');
       mesh.position.copy(getMapPointVector(spot));
       mesh.rotation.y = rotationQuarterToRadians(spot.rotationQuarter ?? (index % 2 === 0 ? 1 : 3));
+      mesh.scale.setScalar(spot.scale ?? 1);
       const weaponMount = attachWeaponToRightArm(mesh, weapon);
+      tuneEnemyWeapon(weapon, weaponKey);
+      if (shield && shieldKey) {
+        attachShieldToLeftArm(mesh, shield, shieldKey);
+      }
       const rig = createCharacterRig(mesh, weaponMount, weapon, animations);
       world.add(mesh);
       enemies.push({
         mesh,
         weapon,
+        shield,
         rig,
+        label: getEnemyLabel(spot.kind),
         hp: spot.hp,
         maxHp: spot.hp,
         speed: spot.speed,
+        damage: spot.damage ?? 14,
+        radius: spot.radius ?? ENEMY_RADIUS,
+        aggroRange: spot.aggroRange ?? 4.8,
+        attackRange: spot.attackRange ?? 1.18,
+        attackIntervalMs: spot.attackIntervalMs ?? 1200,
         attackCooldownMs: 400,
         hurtMs: 0,
         home: getMapPointVector(spot),
@@ -3817,7 +4266,8 @@ function clearEffects() {
   }
 }
 
-function resetState() {
+function resetState(options: { preserveLevel?: boolean; preserveMap?: boolean } = {}) {
+  const nextLevelIndex = options.preserveLevel ? state.levelIndex : 0;
   state.running = false;
   state.started = false;
   state.finished = false;
@@ -3826,6 +4276,7 @@ function resetState() {
   state.finalized = false;
   state.score = 0;
   state.elapsedMs = 0;
+  state.levelIndex = nextLevelIndex;
   state.health = 100;
   state.mana = 80;
   state.attackCooldownMs = 0;
@@ -3843,7 +4294,10 @@ function resetState() {
   virtualJoystickState.active = false;
   clearPursuedEnemy();
   pursuedRemotePeer = false;
-  state.totalTimeMs = gameMode === 'duel' ? DUEL_TOTAL_TIME_MS : 240_000;
+  state.totalTimeMs = gameMode === 'duel' ? DUEL_TOTAL_TIME_MS : SOLO_TOTAL_TIME_MS;
+  if (gameMode === 'solo' && !options.preserveMap) {
+    applyLevelMap(state.levelIndex);
+  }
   updateVirtualJoystickUi();
   setOverlay('');
 }
@@ -3900,8 +4354,8 @@ function ensureRemotePeerAvatar() {
 
 function startDuelMode() {
   gameMode = 'duel';
-  createSceneAssets();
   resetState();
+  createSceneAssets();
   state.started = true;
   state.running = true;
   state.finished = false;
@@ -3969,13 +4423,19 @@ function syncHud() {
   }
 
   const aliveEnemies = enemies.filter((enemy) => enemy.alive).length;
+  const activeLevel = getActiveLevel();
+  const levelLabel = isCustomMapMode()
+    ? 'Custom'
+    : `${state.levelIndex + 1}/${DUNGEON_LEVELS.length} ${activeLevel?.name ?? '던전'}`;
   const stageText = aliveEnemies > 0
-    ? `오크 수호자 처치 ${state.enemiesDefeated}/${enemies.length}`
+    ? `수호자 ${state.enemiesDefeated}/${enemies.length}`
     : !state.chestOpen
-      ? '중앙 보물상자를 열어 게이트 열쇠 획득'
-      : '북쪽 게이트로 탈출';
+      ? '보물상자 열기'
+      : isFinalLevel()
+        ? '북쪽 계단으로 탈출'
+        : '북쪽 게이트로 다음 층';
 
-  objectiveEl.textContent = `Dungeon Quest`;
+  objectiveEl.textContent = `Dungeon Quest · ${levelLabel}`;
   questEl.textContent = `${stageText} · 코인 ${state.coinsCollected}/${coins.length}`;
   scoreEl.textContent = state.score.toLocaleString();
   timerEl.textContent = formatTime(state.totalTimeMs - state.elapsedMs);
@@ -4144,10 +4604,55 @@ function openChest() {
   sceneAssets.gate.position.y = 1.05;
   sceneAssets.chest.rotation.y += Math.PI * 0.24;
   sceneAssets.chest.position.y = 0.12;
-  addScore(420);
+  addScore(isFinalLevel() ? 620 : 420);
   playCue('chest');
   spawnEffect(getMapPointVector(dungeonMapConfig.chest), '#ffe27a');
-  setOverlay('상자를 열었습니다. 북쪽 게이트가 열렸습니다.');
+  setOverlay(isFinalLevel() ? '마지막 상자를 열었습니다. 북쪽 계단으로 탈출하세요.' : '상자를 열었습니다. 북쪽 게이트로 다음 층에 진입하세요.');
+  return true;
+}
+
+function advanceToNextLevel() {
+  if (!sceneAssets || isFinalLevel()) {
+    return false;
+  }
+
+  const clearedLevel = getActiveLevel();
+  const nextLevelIndex = state.levelIndex + 1;
+  const preservedScore = state.score + 540 + nextLevelIndex * 180;
+  const preservedElapsedMs = state.elapsedMs;
+  const preservedReviveAvailable = state.reviveAvailable;
+  const nextHealth = Math.min(state.maxHealth, state.health + 24);
+  const nextMana = Math.min(state.maxMana, state.mana + 42);
+
+  state.levelIndex = nextLevelIndex;
+  applyLevelMap(nextLevelIndex);
+  state.gateOpen = false;
+  state.chestOpen = false;
+  state.coinsCollected = 0;
+  state.enemiesDefeated = 0;
+  state.moveTarget = null;
+  state.attackCooldownMs = 0;
+  state.magicCooldownMs = 0;
+  state.playerHurtMs = 0;
+  state.rollCooldownMs = 0;
+  state.reviveAvailable = preservedReviveAvailable;
+  clearPursuedEnemy();
+  clearMagicProjectiles();
+  createSceneAssets();
+  state.score = preservedScore;
+  state.elapsedMs = preservedElapsedMs;
+  state.health = nextHealth;
+  state.mana = nextMana;
+  state.started = true;
+  state.running = true;
+  state.finished = false;
+  state.waitingReward = false;
+  state.finalized = false;
+  updateCamera();
+  syncHud();
+  playCue('victory');
+  spawnEffect(sceneAssets.player.position, '#7dffb3');
+  setOverlay(clearedLevel?.clearText ?? `${getActiveLevel()?.name ?? '다음 층'}으로 이동했습니다.`);
   return true;
 }
 
@@ -4172,6 +4677,9 @@ function finishRun(reason: string, allowRevive: boolean) {
     metadata: {
       reason,
       reviveAvailable: allowRevive,
+      levelIndex: state.levelIndex,
+      levelName: getActiveLevel()?.name ?? 'custom',
+      levelsCompleted: reason === 'escaped' ? DUNGEON_LEVELS.length : state.levelIndex,
       coinsCollected: state.coinsCollected,
       enemiesDefeated: state.enemiesDefeated,
       chestOpened: state.chestOpen,
@@ -4235,9 +4743,9 @@ function attemptEnemyAttack(preferredEnemy?: EnemyUnit | null) {
   }
 
   const enemy =
-    preferredEnemy && preferredEnemy.alive && preferredEnemy.mesh.position.distanceTo(sceneAssets.player.position) <= 1.42
+    preferredEnemy && preferredEnemy.alive && preferredEnemy.mesh.position.distanceTo(sceneAssets.player.position) <= 1.08 + preferredEnemy.radius
       ? preferredEnemy
-      : getNearestAliveEnemy(1.38);
+      : getNearestAliveEnemy(1.42);
 
   state.attackCooldownMs = 540;
   sceneAssets.playerRig.attackMs = sceneAssets.playerRig.attackDurationMs;
@@ -4248,7 +4756,7 @@ function attemptEnemyAttack(preferredEnemy?: EnemyUnit | null) {
 
   if (!enemy) {
     playCue('miss');
-    setOverlay('허공을 가르기만 했습니다. 오크에게 더 가까이 붙으세요.');
+    setOverlay('허공을 가르기만 했습니다. 적에게 더 가까이 붙으세요.');
     return false;
   }
 
@@ -4264,8 +4772,8 @@ function attemptEnemyAttack(preferredEnemy?: EnemyUnit | null) {
     spawnEffect(enemy.mesh.position, '#ff8d77');
     setOverlay(
       state.enemiesDefeated === enemies.length
-        ? '모든 수호자를 처치했습니다. 중앙 보물상자를 여세요.'
-        : `수호자를 쓰러뜨렸습니다. 남은 적 ${enemies.length - state.enemiesDefeated}명`,
+        ? '모든 수호자를 처치했습니다. 보물상자를 여세요.'
+        : `${enemy.label}을 쓰러뜨렸습니다. 남은 적 ${enemies.length - state.enemiesDefeated}명`,
     );
     if (pursuedEnemy === enemy) {
       clearPursuedEnemy();
@@ -4274,7 +4782,7 @@ function attemptEnemyAttack(preferredEnemy?: EnemyUnit | null) {
   }
 
   addScore(36);
-  setOverlay(`오크를 가격했습니다. 남은 체력 ${enemy.hp}/${enemy.maxHp}`);
+  setOverlay(`${enemy.label}을 가격했습니다. 남은 체력 ${enemy.hp}/${enemy.maxHp}`);
   return true;
 }
 
@@ -4634,7 +5142,7 @@ function updatePlayer(deltaMs: number) {
       moveDirection.subVectors(pursuedEnemy.mesh.position, sceneAssets.player.position);
       moveDirection.y = 0;
       const targetDistance = moveDirection.length();
-      if (targetDistance <= attackRange) {
+      if (targetDistance <= 0.94 + pursuedEnemy.radius) {
         moveDirection.set(0, 0, 0);
         state.moveTarget = null;
         faceDirection(sceneAssets.player, pursuedEnemy.mesh.position.clone().sub(sceneAssets.player.position));
@@ -4696,7 +5204,7 @@ function updateEnemies(deltaMs: number) {
     const planarDistance = Math.hypot(toPlayer.x, toPlayer.z);
 
     let desiredDirection = new THREE.Vector3();
-    if (planarDistance < 4.8) {
+    if (planarDistance < enemy.aggroRange) {
       desiredDirection.copy(toPlayer).setY(0);
       if (desiredDirection.lengthSq() > 0) {
         desiredDirection.normalize();
@@ -4708,9 +5216,9 @@ function updateEnemies(deltaMs: number) {
       }
     }
 
-    if (desiredDirection.lengthSq() > 0 && planarDistance > 1.15) {
+    if (desiredDirection.lengthSq() > 0 && planarDistance > enemy.attackRange) {
       const previousPosition = enemy.mesh.position.clone();
-      const nextPosition = moveCharacterWithCollision(enemy.mesh.position, desiredDirection, enemy.speed, deltaSeconds, ENEMY_RADIUS);
+      const nextPosition = moveCharacterWithCollision(enemy.mesh.position, desiredDirection, enemy.speed, deltaSeconds, enemy.radius);
       enemy.mesh.position.copy(nextPosition);
       faceDirection(enemy.mesh, desiredDirection);
       enemy.rig.moveSpeed = previousPosition.distanceTo(nextPosition) / Math.max(deltaSeconds, 0.0001);
@@ -4720,14 +5228,14 @@ function updateEnemies(deltaMs: number) {
 
     enemy.mesh.position.y = 0;
 
-    if (planarDistance <= 1.18 && enemy.attackCooldownMs <= 0) {
-      enemy.attackCooldownMs = 1200;
+    if (planarDistance <= enemy.attackRange && enemy.attackCooldownMs <= 0) {
+      enemy.attackCooldownMs = enemy.attackIntervalMs;
       enemy.rig.attackMs = enemy.rig.attackDurationMs;
-      const applied = resolveIncomingPlayerDamage(15, 'melee', enemy.mesh.position);
+      const applied = resolveIncomingPlayerDamage(enemy.damage, 'melee', enemy.mesh.position);
       if (!applied) {
         continue;
       }
-      setOverlay(`오크의 공격을 맞았습니다. 체력 ${Math.round(state.health)} 남음`);
+      setOverlay(`${enemy.label}의 공격을 맞았습니다. 체력 ${Math.round(state.health)} 남음`);
 
       if (state.health <= 0) {
         finishRun('defeated', state.reviveAvailable);
@@ -4896,7 +5404,7 @@ function updateMagic(deltaMs: number) {
           }
 
           const distance = enemy.mesh.position.distanceTo(projectile.mesh.position);
-          if (distance > projectile.radius + ENEMY_RADIUS + 0.18) {
+          if (distance > projectile.radius + enemy.radius + 0.18) {
             continue;
           }
 
@@ -4916,12 +5424,12 @@ function updateMagic(deltaMs: number) {
             }
             setOverlay(
               state.enemiesDefeated === enemies.length
-                ? '마법으로 마지막 수호자를 쓰러뜨렸습니다. 중앙 보물상자를 여세요.'
-                : `마법이 적중했습니다. 남은 적 ${enemies.length - state.enemiesDefeated}명`,
+                ? '마법으로 마지막 수호자를 쓰러뜨렸습니다. 보물상자를 여세요.'
+                : `마법으로 ${enemy.label}을 쓰러뜨렸습니다. 남은 적 ${enemies.length - state.enemiesDefeated}명`,
             );
           } else {
             addScore(28);
-            setOverlay(`마법탄 적중. 남은 체력 ${enemy.hp}/${enemy.maxHp}`);
+            setOverlay(`${enemy.label}에게 마법탄 적중. 남은 체력 ${enemy.hp}/${enemy.maxHp}`);
           }
 
           break;
@@ -4977,7 +5485,10 @@ function updateChestAndGate(deltaMs: number) {
   sceneAssets.exitStairs.position.y = Math.sin(state.elapsedMs * 0.0016) * 0.04;
 
   if (state.chestOpen && sceneAssets.player.position.distanceTo(getMapPointVector(dungeonMapConfig.exit)) <= 0.9) {
-    addScore(1000 + Math.max(0, Math.round((state.totalTimeMs - state.elapsedMs) / 150)));
+    if (advanceToNextLevel()) {
+      return;
+    }
+    addScore(1400 + Math.max(0, Math.round((state.totalTimeMs - state.elapsedMs) / 150)));
     finishRun('escaped', false);
   }
 }
@@ -5110,7 +5621,7 @@ function onPointerDown(event: PointerEvent) {
     if (sceneAssets) {
       faceDirection(sceneAssets.player, tappedEnemy.mesh.position.clone().sub(sceneAssets.player.position));
     }
-    if (sceneAssets && tappedEnemy.mesh.position.distanceTo(sceneAssets.player.position) <= 1.32) {
+    if (sceneAssets && tappedEnemy.mesh.position.distanceTo(sceneAssets.player.position) <= 1.02 + tappedEnemy.radius) {
       attemptEnemyAttack(tappedEnemy);
     } else {
       setOverlay('적을 추적합니다. 사거리 안으로 들어가면 자동 공격합니다.');
@@ -5523,11 +6034,12 @@ async function initialize() {
   syncP2pUi();
   setOverlay('던전 에셋과 씬을 준비하는 중입니다...');
   await loadTemplates();
-  createSceneAssets();
   resetState();
+  createSceneAssets();
   resizeRenderer();
   updateCamera();
   syncHud();
+  setOverlay(getActiveLevel()?.intro ?? '화면을 터치하거나 WASD로 이동해 모험을 시작하세요.');
   attackButton.disabled = false;
   magicButton.disabled = false;
   mobileAttackButton.disabled = false;
