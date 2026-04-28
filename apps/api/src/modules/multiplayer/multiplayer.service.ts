@@ -9,8 +9,8 @@ type Identity = {
 };
 
 export class MultiplayerService {
-  listRooms(gameSlug: string) {
-    return store.listMultiplayerRooms(gameSlug);
+  listRooms(gameSlug: string, identity: Identity) {
+    return store.listMultiplayerRooms(gameSlug, identity);
   }
 
   createRoom(payload: CreateMultiplayerRoomInput, identity: Identity) {
@@ -35,4 +35,3 @@ export class MultiplayerService {
 }
 
 export const multiplayerService = new MultiplayerService();
-

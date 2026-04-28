@@ -25,7 +25,7 @@ export const multiplayerController = {
       throw new HttpError(400, 'gameSlug is required');
     }
 
-    res.json(ok(multiplayerService.listRooms(gameSlug)));
+    res.json(ok(multiplayerService.listRooms(gameSlug, identityFromRequest(req))));
   },
 
   create(req: Request, res: Response) {

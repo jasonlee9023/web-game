@@ -448,6 +448,7 @@ type P2PState = {
   connected: boolean;
   snapshotAccumulatorMs: number;
   roomId: string | null;
+  hostedRoom: MultiplayerRoomSummary | null;
   rooms: MultiplayerRoomSummary[];
   selectedRoomId: string | null;
   hostHeartbeatTimerId: number | null;
@@ -733,6 +734,7 @@ const p2pState: P2PState = {
   connected: false,
   snapshotAccumulatorMs: 0,
   roomId: null,
+  hostedRoom: null,
   rooms: [],
   selectedRoomId: null,
   hostHeartbeatTimerId: null,
@@ -1429,7 +1431,7 @@ function syncP2pUi() {
   syncP2pHelpText();
   renderP2pRoomList();
   p2pDisconnectButtonEl.disabled = !p2pState.peerConnection && !p2pState.connected;
-  p2pRefreshButtonEl.disabled = p2pState.status === 'creating-room' || p2pState.status === 'joining';
+  p2pRefreshButtonEl.disabled = p2pState.roomId !== null || p2pState.status === 'creating-room' || p2pState.status === 'joining';
   p2pHostButtonEl.disabled =
     p2pState.status === 'creating-room' ||
     p2pState.status === 'joining' ||
@@ -1536,6 +1538,7 @@ function sendP2pMessage(message: P2PMessage) {
 function clearP2pRuntimeState() {
   p2pState.snapshotAccumulatorMs = 0;
   p2pState.roomId = null;
+  p2pState.hostedRoom = null;
   p2pState.selectedRoomId = null;
   p2pState.pendingRemoteAnswer = null;
 }
@@ -1574,10 +1577,78 @@ function stopLobbyRefresh() {
   }
 }
 
+function roomTimeLabel(room: MultiplayerRoomSummary) {
+  return new Date(room.updatedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function roomStatusLabel(room: MultiplayerRoomSummary) {
+  if (room.status === 'open') {
+    return '입장 가능';
+  }
+  if (room.status === 'joining') {
+    return '입장 처리 중';
+  }
+  return '전투 중';
+}
+
+function appendRoomCardContent(item: HTMLElement, room: MultiplayerRoomSummary, statusLabel: string, ownerLabel: string) {
+  const titleRow = document.createElement('div');
+  titleRow.className = 'p2p-room-meta';
+
+  const title = document.createElement('strong');
+  title.textContent = room.title;
+  const owner = document.createElement('small');
+  owner.textContent = ownerLabel;
+  titleRow.append(title, owner);
+
+  const statusRow = document.createElement('div');
+  statusRow.className = 'p2p-room-meta';
+
+  const status = document.createElement('span');
+  status.textContent = statusLabel;
+  const time = document.createElement('span');
+  time.textContent = roomTimeLabel(room);
+  statusRow.append(status, time);
+
+  item.append(titleRow, statusRow);
+}
+
+function renderHostedRoomCard() {
+  if (p2pState.role !== 'host' || !p2pState.roomId) {
+    return false;
+  }
+
+  const now = new Date().toISOString();
+  const room =
+    p2pState.hostedRoom ??
+    ({
+      id: p2pState.roomId,
+      gameSlug: 'dungeon-quest',
+      title: p2pRoomNameEl.value.trim() || '내 방',
+      hostDisplayName: '나',
+      status: 'open',
+      createdAt: now,
+      updatedAt: now,
+      lastHeartbeatAt: now,
+    } satisfies MultiplayerRoomSummary);
+  const item = document.createElement('div');
+  item.className = 'p2p-room-card p2p-room-card--owned';
+  appendRoomCardContent(item, room, p2pState.status === 'connecting' ? '연결 준비 중' : '참가자 대기중', '내가 만든 방');
+  p2pRoomListEl.append(item);
+  return true;
+}
+
 function renderP2pRoomList() {
   p2pRoomListEl.replaceChildren();
 
-  if (p2pState.rooms.length === 0) {
+  const hasHostedRoom = renderHostedRoomCard();
+  const joinableRooms = p2pState.rooms.filter((room) => room.id !== p2pState.roomId);
+
+  if (joinableRooms.length === 0) {
+    if (hasHostedRoom) {
+      return;
+    }
+
     const empty = document.createElement('div');
     empty.className = 'p2p-empty';
     empty.textContent = '활성 방이 없습니다. 먼저 방을 만들거나 잠시 후 새로고침하세요.';
@@ -1585,7 +1656,7 @@ function renderP2pRoomList() {
     return;
   }
 
-  for (const room of p2pState.rooms) {
+  for (const room of joinableRooms) {
     const item = document.createElement('button');
     item.type = 'button';
     item.className = 'p2p-room-card';
@@ -1594,16 +1665,7 @@ function renderP2pRoomList() {
     item.style.cursor = 'pointer';
     item.style.borderColor =
       p2pState.selectedRoomId === room.id ? 'rgba(143, 215, 255, 0.32)' : 'rgba(255, 255, 255, 0.08)';
-    item.innerHTML = `
-      <div class="p2p-room-meta">
-        <strong>${room.title}</strong>
-        <small>${room.hostDisplayName}</small>
-      </div>
-      <div class="p2p-room-meta">
-        <span>${room.status === 'open' ? '입장 가능' : room.status === 'joining' ? '입장 처리 중' : '전투 중'}</span>
-        <span>${new Date(room.updatedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</span>
-      </div>
-    `;
+    appendRoomCardContent(item, room, roomStatusLabel(room), room.hostDisplayName);
     item.addEventListener('pointerdown', async (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -1642,7 +1704,7 @@ async function refreshLobby(showOverlay = false) {
   setP2pStatus('loading-lobby', '활성 방 목록을 새로 불러오는 중입니다.');
   syncP2pUi();
   try {
-    p2pState.rooms = await fetchLobbyRooms('dungeon-quest');
+    p2pState.rooms = (await fetchLobbyRooms('dungeon-quest')).filter((room) => room.id !== p2pState.roomId);
     if (p2pState.selectedRoomId && !p2pState.rooms.some((room) => room.id === p2pState.selectedRoomId)) {
       p2pState.selectedRoomId = p2pState.rooms[0]?.id ?? null;
     }
@@ -1861,9 +1923,10 @@ async function createHostRoom() {
     title: p2pRoomNameEl.value.trim() || undefined,
   });
   p2pState.roomId = response.room.id;
-  p2pState.selectedRoomId = response.room.id;
-  p2pState.rooms = [response.room, ...p2pState.rooms.filter((room) => room.id !== response.room.id)];
-  setP2pStatus('waiting-peer', '방이 생성되었습니다. 참가자가 들어오면 서버 heartbeat 응답으로 answer를 받습니다.');
+  p2pState.hostedRoom = response.room;
+  p2pState.selectedRoomId = null;
+  p2pState.rooms = p2pState.rooms.filter((room) => room.id !== response.room.id);
+  setP2pStatus('waiting-peer', '내 방이 생성되었습니다. 초대 링크를 공유하고 참가자를 기다리는 중입니다.');
   stopHostHeartbeat();
   p2pState.hostHeartbeatTimerId = window.setInterval(() => {
     void heartbeatHostRoom();
@@ -1879,7 +1942,8 @@ async function heartbeatHostRoom() {
 
   try {
     const response = await heartbeatLobbyRoom(p2pState.roomId);
-    p2pState.rooms = [response.room, ...p2pState.rooms.filter((room) => room.id !== response.room.id)];
+    p2pState.hostedRoom = response.room;
+    p2pState.rooms = p2pState.rooms.filter((room) => room.id !== response.room.id);
     if (response.answer && response.answer !== p2pState.pendingRemoteAnswer) {
       p2pState.pendingRemoteAnswer = response.answer;
       await p2pState.peerConnection.setRemoteDescription(JSON.parse(response.answer) as RTCSessionDescriptionInit);

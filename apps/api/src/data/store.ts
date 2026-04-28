@@ -86,10 +86,12 @@ export class DataStore {
     return this.games.filter((game) => game.status === 'published');
   }
 
-  listMultiplayerRooms(gameSlug: string) {
+  listMultiplayerRooms(gameSlug: string, identity?: ActorIdentity) {
     this.pruneMultiplayerRooms();
+    const actor = identity && (identity.userId || identity.guestId) ? multiplayerActorKey(identity) : null;
+
     return this.multiplayerRooms
-      .filter((room) => room.gameSlug === gameSlug && room.status === 'open')
+      .filter((room) => room.gameSlug === gameSlug && room.status === 'open' && (!actor || multiplayerHostActorKey(room) !== actor))
       .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())
       .map((room) => this.roomToSummary(room));
   }
