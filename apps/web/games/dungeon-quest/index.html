@@ -655,6 +655,12 @@
         flex-wrap: wrap;
       }
 
+      .p2p-actions[hidden],
+      .p2p-split[hidden],
+      .p2p-input-group[hidden] {
+        display: none;
+      }
+
       .p2p-actions .p2p-button,
       .p2p-split .p2p-button {
         flex: 1;
@@ -1150,22 +1156,25 @@
             <span id="p2p-role" class="p2p-role">Solo</span>
           </div>
 
-          <div class="p2p-actions">
+          <div id="p2p-lobby-actions" class="p2p-actions">
             <button id="p2p-host-button" class="p2p-button p2p-button--accent" type="button">방 만들기</button>
             <button id="p2p-join-button" class="p2p-button" type="button">참가하기</button>
+          </div>
+
+          <div id="p2p-room-actions" class="p2p-actions" hidden>
+            <button id="p2p-copy-invite-button" class="p2p-button p2p-button--compact" type="button" hidden>
+              링크 복사
+            </button>
             <button id="p2p-disconnect-button" class="p2p-button p2p-button--danger" type="button">연결 종료</button>
           </div>
 
-          <div class="p2p-input-group">
+          <div id="p2p-room-name-group" class="p2p-input-group">
             <label for="p2p-room-name">새 방 이름</label>
             <input id="p2p-room-name" class="p2p-room-name" type="text" maxlength="32" placeholder="예: Seoul Raid Room" />
           </div>
 
-          <div class="p2p-split">
+          <div id="p2p-lobby-tools" class="p2p-split">
             <button id="p2p-refresh-button" class="p2p-button" type="button">로비 새로고침</button>
-            <button id="p2p-copy-invite-button" class="p2p-button p2p-button--compact" type="button" hidden>
-              링크 복사
-            </button>
           </div>
 
           <div id="p2p-room-list" class="p2p-list" aria-live="polite">

@@ -51,11 +51,15 @@ const p2pPanelNode = document.querySelector<HTMLElement>('#p2p-panel');
 const p2pToggleNode = document.querySelector<HTMLButtonElement>('#p2p-toggle');
 const p2pStatusNode = document.querySelector<HTMLElement>('#p2p-status');
 const p2pRoleNode = document.querySelector<HTMLElement>('#p2p-role');
+const p2pLobbyActionsNode = document.querySelector<HTMLElement>('#p2p-lobby-actions');
+const p2pRoomActionsNode = document.querySelector<HTMLElement>('#p2p-room-actions');
 const p2pHostButtonNode = document.querySelector<HTMLButtonElement>('#p2p-host-button');
 const p2pJoinButtonNode = document.querySelector<HTMLButtonElement>('#p2p-join-button');
 const p2pDisconnectButtonNode = document.querySelector<HTMLButtonElement>('#p2p-disconnect-button');
 const p2pRefreshButtonNode = document.querySelector<HTMLButtonElement>('#p2p-refresh-button');
 const p2pCopyInviteButtonNode = document.querySelector<HTMLButtonElement>('#p2p-copy-invite-button');
+const p2pRoomNameGroupNode = document.querySelector<HTMLElement>('#p2p-room-name-group');
+const p2pLobbyToolsNode = document.querySelector<HTMLElement>('#p2p-lobby-tools');
 const p2pRoomNameNode = document.querySelector<HTMLInputElement>('#p2p-room-name');
 const p2pRoomListNode = document.querySelector<HTMLElement>('#p2p-room-list');
 const p2pHelpTextNode = document.querySelector<HTMLElement>('#p2p-help-text');
@@ -98,11 +102,15 @@ if (
   !p2pToggleNode ||
   !p2pStatusNode ||
   !p2pRoleNode ||
+  !p2pLobbyActionsNode ||
+  !p2pRoomActionsNode ||
   !p2pHostButtonNode ||
   !p2pJoinButtonNode ||
   !p2pDisconnectButtonNode ||
   !p2pRefreshButtonNode ||
   !p2pCopyInviteButtonNode ||
+  !p2pRoomNameGroupNode ||
+  !p2pLobbyToolsNode ||
   !p2pRoomNameNode ||
   !p2pRoomListNode ||
   !p2pHelpTextNode ||
@@ -147,11 +155,15 @@ const p2pPanelEl = p2pPanelNode;
 const p2pToggleEl = p2pToggleNode;
 const p2pStatusEl = p2pStatusNode;
 const p2pRoleEl = p2pRoleNode;
+const p2pLobbyActionsEl = p2pLobbyActionsNode;
+const p2pRoomActionsEl = p2pRoomActionsNode;
 const p2pHostButtonEl = p2pHostButtonNode;
 const p2pJoinButtonEl = p2pJoinButtonNode;
 const p2pDisconnectButtonEl = p2pDisconnectButtonNode;
 const p2pRefreshButtonEl = p2pRefreshButtonNode;
 const p2pCopyInviteButtonEl = p2pCopyInviteButtonNode;
+const p2pRoomNameGroupEl = p2pRoomNameGroupNode;
+const p2pLobbyToolsEl = p2pLobbyToolsNode;
 const p2pRoomNameEl = p2pRoomNameNode;
 const p2pRoomListEl = p2pRoomListNode;
 const p2pHelpTextEl = p2pHelpTextNode;
@@ -1420,13 +1432,21 @@ function enterCompactMatchModeUi() {
 
 function syncP2pUi() {
   const canCopyInvite = p2pState.role === 'host' && p2pState.roomId !== null;
+  const isRoomContext = p2pState.roomId !== null;
   p2pPanelEl.dataset.collapsed = String(p2pState.collapsed);
+  p2pPanelEl.dataset.context = isRoomContext ? 'room' : 'lobby';
   p2pToggleEl.textContent = p2pState.collapsed ? '열기' : '닫기';
   p2pToggleEl.setAttribute('aria-expanded', String(!p2pState.collapsed));
   p2pStatusEl.textContent = getStatusLabel(p2pState.status);
   p2pRoleEl.textContent = getRoleLabel(p2pState.role);
+  p2pLobbyActionsEl.hidden = isRoomContext;
+  p2pRoomActionsEl.hidden = !isRoomContext;
+  p2pRoomNameGroupEl.hidden = isRoomContext;
+  p2pLobbyToolsEl.hidden = isRoomContext;
   p2pCopyInviteButtonEl.hidden = !canCopyInvite;
   p2pCopyInviteButtonEl.disabled = !canCopyInvite || p2pState.status === 'creating-room';
+  p2pDisconnectButtonEl.textContent =
+    p2pState.status === 'waiting-peer' ? '대기 취소' : p2pState.connected ? '매치 종료' : '연결 종료';
   syncP2pConnectedIndicator();
   syncP2pHelpText();
   renderP2pRoomList();
@@ -1651,7 +1671,12 @@ function renderP2pRoomList() {
 
     const empty = document.createElement('div');
     empty.className = 'p2p-empty';
-    empty.textContent = '활성 방이 없습니다. 먼저 방을 만들거나 잠시 후 새로고침하세요.';
+    empty.textContent =
+      p2pState.roomId !== null
+        ? p2pState.role === 'guest'
+          ? '방에 참가 요청을 보냈습니다. 호스트 연결을 기다리는 중입니다.'
+          : '매치 연결을 준비하는 중입니다.'
+        : '활성 방이 없습니다. 먼저 방을 만들거나 잠시 후 새로고침하세요.';
     p2pRoomListEl.append(empty);
     return;
   }
@@ -5405,7 +5430,7 @@ function mountEvents() {
       void unlockAudio();
       await createHostRoom();
       setP2pCollapsed(false);
-      setOverlay('방을 만들었습니다. 로비에서 참가자를 기다립니다.');
+      setOverlay('방 대기실을 만들었습니다. 참가자를 기다립니다.');
     } catch {
       setP2pStatus('error', '방 생성에 실패했습니다. 다시 시도하세요.');
       syncP2pUi();
