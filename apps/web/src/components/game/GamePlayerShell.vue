@@ -72,6 +72,7 @@ const pendingPayload = ref<GameOverPayload | null>(null);
 const focusMode = ref(true);
 const fullscreenRootRef = ref<HTMLElement | null>(null);
 const browserFullscreenActive = ref(Boolean(document.fullscreenElement));
+const gameFrameVisible = ref(false);
 const hostedRoomId = ref<string | null>(readHostedRoomId(props.game.slug));
 const inviteJoinRequested = ref(false);
 const lastJoinCommandKey = ref('');
@@ -113,8 +114,11 @@ async function bootstrapSession() {
   rewardOffered.value = false;
   modalVisible.value = false;
   gameReady.value = false;
+  gameFrameVisible.value = false;
   focusMode.value = true;
   await playSessionStore.start(props.game.slug, currentMode.value);
+  await nextTick();
+  gameFrameVisible.value = true;
   await nextTick();
   void requestBrowserFullscreen();
 }
@@ -258,7 +262,11 @@ async function handleMessage(event: MessageEvent<BridgeEvent>) {
 }
 
 async function replay() {
+  gameReady.value = false;
+  gameFrameVisible.value = false;
   await playSessionStore.replay(props.game.slug, currentMode.value);
+  await nextTick();
+  gameFrameVisible.value = true;
   modalVisible.value = false;
   rewardOffered.value = false;
   pendingPayload.value = null;
@@ -357,13 +365,13 @@ function syncImmersiveBodyState() {
 
 onMounted(async () => {
   syncImmersiveBodyState();
+  window.addEventListener('message', handleMessage as unknown as EventListener);
+  document.addEventListener('fullscreenchange', handleFullscreenChange);
   await bootstrapSession();
   await trackEvent('page-view', {
     page: 'game-play',
     gameSlug: props.game.slug,
   });
-  window.addEventListener('message', handleMessage as unknown as EventListener);
-  document.addEventListener('fullscreenchange', handleFullscreenChange);
 });
 
 watch(
@@ -454,6 +462,7 @@ onBeforeUnmount(() => {
           </button>
         </article>
         <GameIframe
+          v-if="gameFrameVisible"
           ref="iframeRef"
           :frame-key="playSessionStore.iframeKey"
           :src="game.entryUrl"

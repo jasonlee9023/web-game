@@ -95,7 +95,7 @@ export function resolveWebOrigin(req: Request) {
   const requestHost = forwardedHost || req.get('host');
   const requestHostname = requestHost ? parseHost(requestHost) : null;
 
-  if (requestHost && requestHostname && !isLoopbackHostname(requestHostname)) {
+  if (requestHost && requestHostname) {
     const publicOrigin = new URL(`${protocol}://${requestHost}`);
     if (configuredOrigin?.port) {
       publicOrigin.port = configuredOrigin.port;
