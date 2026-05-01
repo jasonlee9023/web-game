@@ -69,6 +69,7 @@ const rewardOffered = ref(false);
 const modalVisible = ref(false);
 const latestRank = ref<number | null>(null);
 const pendingPayload = ref<GameOverPayload | null>(null);
+const latestResultMetadata = ref<Record<string, unknown> | undefined>();
 const focusMode = ref(true);
 const fullscreenRootRef = ref<HTMLElement | null>(null);
 const browserFullscreenActive = ref(Boolean(document.fullscreenElement));
@@ -111,6 +112,7 @@ async function bootstrapSession() {
   currentMode.value = props.game.modes[0] ?? 'normal';
   latestRank.value = null;
   pendingPayload.value = null;
+  latestResultMetadata.value = undefined;
   rewardOffered.value = false;
   modalVisible.value = false;
   gameReady.value = false;
@@ -202,9 +204,9 @@ async function finalizePendingScore() {
   }
 
   const payload = pendingPayload.value;
-  pendingPayload.value = null;
   rewardOffered.value = false;
   await playSessionStore.finalize(props.game.slug, payload);
+  pendingPayload.value = null;
   await loadRankForLastScore();
   modalVisible.value = true;
   await trackEvent('game-over', {
@@ -234,6 +236,7 @@ async function handleMessage(event: MessageEvent<BridgeEvent>) {
       break;
     case 'GAME_OVER':
       pendingPayload.value = event.data.payload;
+      latestResultMetadata.value = event.data.payload.metadata;
       currentMode.value = event.data.payload.mode;
       modalVisible.value = true;
 
@@ -501,7 +504,7 @@ onBeforeUnmount(() => {
       :my-best="playSessionStore.myBest?.score"
       :rank="latestRank"
       :signed-in="authStore.isAuthenticated"
-      :metadata="pendingPayload?.metadata ?? playSessionStore.lastScore?.metadata"
+      :metadata="pendingPayload?.metadata ?? latestResultMetadata ?? playSessionStore.lastScore?.metadata"
       :reward-available="rewardOffered"
       :reward-loading="rewardLoading"
       :finalized="!rewardOffered"
