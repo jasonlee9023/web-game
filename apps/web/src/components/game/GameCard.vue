@@ -10,10 +10,14 @@ defineProps<{
 
 <template>
   <article class="game-card">
-    <div class="game-card-media">
+    <RouterLink
+      class="game-card-media game-card-media-link"
+      :to="`/games/${game.slug}/play`"
+      :aria-label="`${game.title} 플레이`"
+    >
       <img class="game-card-image" :src="game.thumbnailUrl" :alt="game.title" />
       <span class="game-card-badge">{{ game.engineType }}</span>
-    </div>
+    </RouterLink>
     <div class="game-card-body">
       <div class="game-card-topline">
         <span class="game-card-category">{{ game.categories[0] }}</span>
