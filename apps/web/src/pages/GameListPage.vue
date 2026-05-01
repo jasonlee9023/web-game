@@ -2,6 +2,7 @@
 import { computed, onMounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
+import AdSlot from '@/components/ads/AdSlot.vue';
 import GameGrid from '@/components/game/GameGrid.vue';
 import { useGameStore } from '@/stores/game.store';
 import { applySeo } from '@/utils/seo';
@@ -47,7 +48,8 @@ watch([search, category], () => {
       </RouterLink>
     </div>
 
+    <AdSlot page="game-list" position="in-feed" />
+
     <GameGrid :games="gameStore.games" />
   </section>
 </template>
-

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref, watch } from 'vue';
+import { onMounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import AdSlot from '@/components/ads/AdSlot.vue';
@@ -13,22 +13,6 @@ import { formatCompact, formatScore } from '@/utils/format';
 const route = useRoute();
 const gameStore = useGameStore();
 const rankingStore = useRankingStore();
-const detailRightRailAdRequested = ref(false);
-
-function requestDetailRightRailAd() {
-  if (detailRightRailAdRequested.value) {
-    return;
-  }
-
-  detailRightRailAdRequested.value = true;
-  try {
-    window.adsbygoogle = window.adsbygoogle ?? [];
-    window.adsbygoogle.push({});
-  } catch (error) {
-    detailRightRailAdRequested.value = false;
-    console.warn('Detail right rail AdSense request failed', error);
-  }
-}
 
 async function load() {
   const slug = route.params.slug.toString();
@@ -41,8 +25,6 @@ async function load() {
     title: game.title,
     description: game.shortDescription,
   });
-  await nextTick();
-  requestDetailRightRailAd();
 }
 
 onMounted(load);
@@ -83,16 +65,7 @@ watch(() => route.params.slug, () => {
       </article>
 
       <aside class="detail-side">
-        <aside class="ad-slot detail-right-rail-ad" data-position="right-rail" data-provider="adsense">
-          <ins
-            class="adsbygoogle ad-slot-unit"
-            style="display: block; text-align: center"
-            data-ad-layout="in-article"
-            data-ad-format="fluid"
-            data-ad-client="ca-pub-2016140648106882"
-            data-ad-slot="1264910007"
-          ></ins>
-        </aside>
+        <AdSlot page="game-detail" position="right-rail" :game-slug="gameStore.currentGame.slug" />
         <article class="info-panel">
           <p class="eyebrow">Today Top 5</p>
           <h2>오늘의 랭킹</h2>

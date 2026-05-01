@@ -9,7 +9,7 @@ export type AdDevice = 'desktop' | 'mobile';
 export type ValidationStatus = 'pending' | 'valid' | 'suspicious' | 'rejected';
 export type GameMode = 'normal' | 'hard' | 'time-attack';
 export type RewardReason = 'REVIVE' | 'HINT' | 'BONUS';
-export type AdPage = 'home' | 'game-detail' | 'game-play' | 'ranking' | 'global-ranking';
+export type AdPage = 'home' | 'game-list' | 'game-detail' | 'game-play' | 'ranking' | 'global-ranking';
 export type MultiplayerRoomStatus = 'open' | 'joining' | 'connected';
 export type AdPosition =
   | 'top-banner'

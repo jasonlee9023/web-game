@@ -473,6 +473,9 @@ onBeforeUnmount(() => {
           :aspect-ratio="game.aspectRatio"
           :fit-viewport="focusMode"
         />
+        <div class="play-stage-ad">
+          <AdSlot page="game-play" position="bottom" :game-slug="game.slug" />
+        </div>
       </div>
 
       <div v-if="!focusMode" class="related-strip">

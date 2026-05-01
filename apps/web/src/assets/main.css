@@ -798,6 +798,22 @@ h3,
   box-shadow: none;
 }
 
+.ad-slot-fallback {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ad-slot-fallback strong {
+  color: var(--text);
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.ad-slot-fallback p {
+  margin: 0;
+}
+
 .ad-slot[data-provider='adsense'] {
   align-content: start;
   gap: 8px;
@@ -813,6 +829,13 @@ h3,
 
 .ad-slot[data-position='right-rail'] .ad-slot-unit {
   min-height: 280px;
+}
+
+.ad-slot[data-position='bottom'],
+.ad-slot[data-position='in-feed'],
+.ad-slot[data-position='mid-content'],
+.ad-slot[data-position='top-banner'] {
+  width: 100%;
 }
 
 .ad-slot-label {
@@ -860,6 +883,30 @@ h3,
 .play-stage.is-focus-stage {
   min-height: calc(100dvh - 126px);
   align-content: start;
+}
+
+.play-stage-ad {
+  display: none;
+}
+
+.play-layout.is-focus-mode .play-stage-ad {
+  display: block;
+}
+
+.play-stage-ad .ad-slot {
+  min-height: 84px;
+  padding: 10px 12px;
+}
+
+.play-stage-ad .ad-slot-fallback {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.play-stage-ad .ad-slot-fallback p {
+  grid-column: 1 / -1;
+  font-size: 0.86rem;
 }
 
 .play-stage-copy {
@@ -1425,8 +1472,8 @@ h3,
   .play-layout.is-focus-mode .game-iframe-frame.is-fit-viewport {
     width: 100% !important;
     max-width: 100% !important;
-    min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 78px);
-    height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 78px);
+    min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 170px);
+    height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 170px);
     aspect-ratio: auto !important;
     border-radius: var(--radius-lg);
   }

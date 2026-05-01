@@ -3,6 +3,7 @@ import { onMounted, ref, watch } from 'vue';
 
 import type { RankingPeriod } from '@casual-game-world/shared';
 
+import AdSlot from '@/components/ads/AdSlot.vue';
 import RankingFilter from '@/components/ranking/RankingFilter.vue';
 import LeaderboardTable from '@/components/ranking/LeaderboardTable.vue';
 import { useRankingStore } from '@/stores/ranking.store';
@@ -34,6 +35,8 @@ watch(period, () => {
 
     <RankingFilter v-model:period="period" mode="normal" :modes="['normal']" />
 
+    <AdSlot page="global-ranking" position="mid-content" />
+
     <div class="two-column-panel">
       <article v-for="bucket in rankingStore.globalRanking?.buckets ?? []" :key="bucket.gameSlug" class="info-panel">
         <div class="section-heading tight">
@@ -48,4 +51,3 @@ watch(period, () => {
     </div>
   </section>
 </template>
-

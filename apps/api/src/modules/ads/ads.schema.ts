@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const adsConfigQuerySchema = z.object({
-  page: z.enum(['home', 'game-detail', 'game-play', 'ranking', 'global-ranking']),
+  page: z.enum(['home', 'game-list', 'game-detail', 'game-play', 'ranking', 'global-ranking']),
   gameSlug: z.string().optional(),
 });
 
@@ -11,4 +11,3 @@ export const adsEventSchema = z.object({
   gameSlug: z.string().optional(),
   slotId: z.string().optional(),
 });
-
