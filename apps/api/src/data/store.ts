@@ -129,7 +129,7 @@ export class DataStore {
     } satisfies MultiplayerRoomSignalResponse;
   }
 
-  getMultiplayerRoomForJoin(roomId: string) {
+  getMultiplayerRoomForJoin(roomId: string, identity?: ActorIdentity) {
     this.pruneMultiplayerRooms();
     const room = this.multiplayerRooms.find((candidate) => candidate.id === roomId);
 
@@ -137,7 +137,17 @@ export class DataStore {
       throw new HttpError(404, 'Room not found');
     }
 
-    if (room.status === 'connected') {
+    const actor = identity && (identity.userId || identity.guestId) ? multiplayerActorKey(identity) : null;
+    const hostActor = multiplayerHostActorKey(room);
+    const guestActor =
+      room.guestUserId || room.guestGuestId
+        ? multiplayerActorKey({
+            userId: room.guestUserId,
+            guestId: room.guestGuestId,
+          })
+        : null;
+
+    if (room.status === 'connected' && actor !== hostActor && actor !== guestActor) {
       throw new HttpError(409, 'Room is already full');
     }
 

@@ -17,8 +17,8 @@ export class MultiplayerService {
     return store.createMultiplayerRoom(payload, identity);
   }
 
-  getRoom(roomId: string) {
-    return store.getMultiplayerRoomForJoin(roomId);
+  getRoom(roomId: string, identity: Identity) {
+    return store.getMultiplayerRoomForJoin(roomId, identity);
   }
 
   joinRoom(roomId: string, payload: JoinMultiplayerRoomInput, identity: Identity) {

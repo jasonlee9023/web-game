@@ -482,7 +482,10 @@ type P2PState = {
   rooms: MultiplayerRoomSummary[];
   selectedRoomId: string | null;
   hostHeartbeatTimerId: number | null;
+  hostHeartbeatFailures: number;
+  guestRoomPollTimerId: number | null;
   lobbyRefreshTimerId: number | null;
+  peerDisconnectTimerId: number | null;
   pendingRemoteAnswer: string | null;
 };
 
@@ -670,6 +673,11 @@ const DUEL_MAGIC_DAMAGE = 14;
 const DUEL_TOTAL_TIME_MS = 180_000;
 const SOLO_TOTAL_TIME_MS = 420_000;
 const P2P_SNAPSHOT_INTERVAL_MS = 60;
+const P2P_ICE_GATHERING_TIMEOUT_MS = 2_500;
+const P2P_HOST_HEARTBEAT_INTERVAL_MS = 1_500;
+const P2P_HOST_HEARTBEAT_FAILURE_LIMIT = 3;
+const P2P_GUEST_ROOM_POLL_INTERVAL_MS = 1_750;
+const P2P_DISCONNECT_GRACE_MS = 8_000;
 const DEFAULT_P2P_HELP_TEXT =
   '로비에서 방을 만들면 서버가 offer/answer 신호를 중계합니다. 호스트 heartbeat가 멈추면 방은 자동으로 정리됩니다.';
 const PLAYER_MOVE_SPEED = 3.45;
@@ -805,7 +813,10 @@ const p2pState: P2PState = {
   rooms: [],
   selectedRoomId: null,
   hostHeartbeatTimerId: null,
+  hostHeartbeatFailures: 0,
+  guestRoomPollTimerId: null,
   lobbyRefreshTimerId: null,
+  peerDisconnectTimerId: null,
   pendingRemoteAnswer: null,
 };
 
@@ -1719,6 +1730,12 @@ function toggleP2pPanelVisibility() {
   syncUtilityMenu();
 }
 
+function revealP2pPanel() {
+  p2pPanelEl.hidden = false;
+  p2pState.collapsed = false;
+  syncUtilityMenu();
+}
+
 function isMenuTarget(target: EventTarget | null) {
   return target instanceof Node && utilityMenu.contains(target);
 }
@@ -1885,23 +1902,34 @@ function getRemoteSpawnPosition(localRole: P2PRole) {
   return getDuelSpawnPosition(localRole === 'guest' ? 'host' : 'guest');
 }
 
-function waitForIceGatheringComplete(peerConnection: RTCPeerConnection) {
+function waitForIceGatheringComplete(peerConnection: RTCPeerConnection, timeoutMs = P2P_ICE_GATHERING_TIMEOUT_MS) {
   return new Promise<void>((resolve) => {
-    if (peerConnection.iceGatheringState === 'complete') {
+    let resolved = false;
+    let timeoutId: number | null = null;
+    const finish = () => {
+      if (resolved) {
+        return;
+      }
+      resolved = true;
+      peerConnection.removeEventListener('icegatheringstatechange', onStateChange);
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
       resolve();
+    };
+    const onStateChange = () => {
+      if (peerConnection.iceGatheringState === 'complete') {
+        finish();
+      }
+    };
+
+    if (peerConnection.iceGatheringState === 'complete') {
+      finish();
       return;
     }
 
-    const onStateChange = () => {
-      if (peerConnection.iceGatheringState !== 'complete') {
-        return;
-      }
-
-      peerConnection.removeEventListener('icegatheringstatechange', onStateChange);
-      resolve();
-    };
-
     peerConnection.addEventListener('icegatheringstatechange', onStateChange);
+    timeoutId = window.setTimeout(finish, timeoutMs);
   });
 }
 
@@ -1919,10 +1947,32 @@ function clearP2pRuntimeState() {
   p2pState.roomId = null;
   p2pState.hostedRoom = null;
   p2pState.selectedRoomId = null;
+  p2pState.hostHeartbeatFailures = 0;
   p2pState.pendingRemoteAnswer = null;
 }
 
+function clearPeerDisconnectTimer() {
+  if (p2pState.peerDisconnectTimerId !== null) {
+    window.clearTimeout(p2pState.peerDisconnectTimerId);
+    p2pState.peerDisconnectTimerId = null;
+  }
+}
+
+function schedulePeerDisconnectGrace(peerConnection: RTCPeerConnection) {
+  if (p2pState.peerDisconnectTimerId !== null) {
+    return;
+  }
+
+  p2pState.peerDisconnectTimerId = window.setTimeout(() => {
+    p2pState.peerDisconnectTimerId = null;
+    if (peerConnection.connectionState === 'disconnected' || peerConnection.iceConnectionState === 'disconnected') {
+      disconnectP2P(true);
+    }
+  }, P2P_DISCONNECT_GRACE_MS);
+}
+
 function closePeerConnectionOnly() {
+  clearPeerDisconnectTimer();
   if (p2pState.dataChannel) {
     p2pState.dataChannel.onopen = null;
     p2pState.dataChannel.onclose = null;
@@ -1934,6 +1984,7 @@ function closePeerConnectionOnly() {
 
   if (p2pState.peerConnection) {
     p2pState.peerConnection.onconnectionstatechange = null;
+    p2pState.peerConnection.oniceconnectionstatechange = null;
     p2pState.peerConnection.ondatachannel = null;
     p2pState.peerConnection.close();
     p2pState.peerConnection = null;
@@ -1947,6 +1998,7 @@ function stopHostHeartbeat() {
     window.clearInterval(p2pState.hostHeartbeatTimerId);
     p2pState.hostHeartbeatTimerId = null;
   }
+  p2pState.hostHeartbeatFailures = 0;
 }
 
 function stopLobbyRefresh() {
@@ -1954,6 +2006,44 @@ function stopLobbyRefresh() {
     window.clearInterval(p2pState.lobbyRefreshTimerId);
     p2pState.lobbyRefreshTimerId = null;
   }
+}
+
+function stopGuestRoomPoll() {
+  if (p2pState.guestRoomPollTimerId !== null) {
+    window.clearInterval(p2pState.guestRoomPollTimerId);
+    p2pState.guestRoomPollTimerId = null;
+  }
+}
+
+function startGuestRoomPoll(roomId: string) {
+  stopGuestRoomPoll();
+  let failures = 0;
+  p2pState.guestRoomPollTimerId = window.setInterval(async () => {
+    if (p2pState.role !== 'guest' || p2pState.roomId !== roomId || p2pState.connected) {
+      stopGuestRoomPoll();
+      return;
+    }
+
+    try {
+      const response = await fetchLobbyRoom(roomId);
+      failures = 0;
+      if (response.room.status === 'connected') {
+        setP2pStatus('connecting', '호스트가 참가 요청을 확인했습니다. 브라우저 P2P 연결을 여는 중입니다.');
+        syncP2pUi();
+      } else if (response.room.status === 'open') {
+        setP2pStatus('error', '호스트가 방을 다시 열었습니다. 참가를 다시 시도해 주세요.');
+        stopGuestRoomPoll();
+        syncP2pUi();
+      }
+    } catch {
+      failures += 1;
+      if (failures >= 3) {
+        setP2pStatus('error', '방 상태를 확인하지 못했습니다. 호스트가 방을 닫았을 수 있습니다.');
+        stopGuestRoomPoll();
+        syncP2pUi();
+      }
+    }
+  }, P2P_GUEST_ROOM_POLL_INTERVAL_MS);
 }
 
 function roomTimeLabel(room: MultiplayerRoomSummary) {
@@ -2012,7 +2102,17 @@ function renderHostedRoomCard() {
     } satisfies MultiplayerRoomSummary);
   const item = document.createElement('div');
   item.className = 'p2p-room-card p2p-room-card--owned';
-  appendRoomCardContent(item, room, p2pState.status === 'connecting' ? '연결 준비 중' : '참가자 대기중', '내가 만든 방');
+  const guestLabel = room.guestDisplayName ? `${room.guestDisplayName} 참가` : '';
+  const statusLabel = p2pState.connected
+    ? '매치 연결됨'
+    : guestLabel
+      ? p2pState.status === 'connecting'
+        ? `${guestLabel} · 연결 중`
+        : `${guestLabel} · 응답 확인 중`
+      : p2pState.status === 'connecting'
+        ? '연결 준비 중'
+        : '참가자 대기중';
+  appendRoomCardContent(item, room, statusLabel, '내가 만든 방');
   p2pRoomListEl.append(item);
   return true;
 }
@@ -2128,6 +2228,7 @@ function disconnectP2P(showOverlay = true) {
   const roomId = p2pState.roomId;
   closePeerConnectionOnly();
   stopHostHeartbeat();
+  stopGuestRoomPoll();
   leaveDuelMode();
   p2pState.role = 'solo';
   if (roomId) {
@@ -2229,6 +2330,8 @@ function handleP2pMessage(message: P2PMessage) {
 function setupDataChannel(channel: RTCDataChannel) {
   p2pState.dataChannel = channel;
   channel.onopen = () => {
+    clearPeerDisconnectTimer();
+    stopGuestRoomPoll();
     p2pState.connected = true;
     setP2pStatus('connected', '연결되었습니다. 두 플레이어 모두 같은 던전에서 실시간으로 대전합니다.');
     startDuelMode();
@@ -2256,16 +2359,38 @@ function setupDataChannel(channel: RTCDataChannel) {
 }
 
 function attachPeerConnectionHandlers(peerConnection: RTCPeerConnection) {
-  peerConnection.onconnectionstatechange = () => {
+  const syncPeerConnectionState = () => {
     if (peerConnection.connectionState === 'connected') {
+      clearPeerDisconnectTimer();
       p2pState.connected = true;
       setP2pStatus('connected', '연결되었습니다. 두 플레이어 모두 같은 던전에서 실시간으로 대전합니다.');
     } else if (peerConnection.connectionState === 'connecting') {
       setP2pStatus('connecting', '상대 응답을 확인 중입니다. 연결이 성립되면 자동으로 매치가 시작됩니다.');
-    } else if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'disconnected') {
+    } else if (peerConnection.connectionState === 'disconnected') {
+      p2pState.connected = false;
+      setP2pStatus('connecting', '네트워크가 잠시 불안정합니다. 자동으로 재연결을 확인하는 중입니다.');
+      schedulePeerDisconnectGrace(peerConnection);
+    } else if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'closed') {
       disconnectP2P(true);
     }
     syncP2pUi();
+  };
+
+  peerConnection.onconnectionstatechange = syncPeerConnectionState;
+  peerConnection.oniceconnectionstatechange = () => {
+    if (peerConnection.iceConnectionState === 'connected' || peerConnection.iceConnectionState === 'completed') {
+      clearPeerDisconnectTimer();
+      return;
+    }
+
+    if (peerConnection.iceConnectionState === 'disconnected') {
+      p2pState.connected = false;
+      setP2pStatus('connecting', '네트워크가 잠시 불안정합니다. 자동으로 재연결을 확인하는 중입니다.');
+      schedulePeerDisconnectGrace(peerConnection);
+      syncP2pUi();
+    } else if (peerConnection.iceConnectionState === 'failed' || peerConnection.iceConnectionState === 'closed') {
+      disconnectP2P(true);
+    }
   };
 
   peerConnection.ondatachannel = (event) => {
@@ -2275,6 +2400,7 @@ function attachPeerConnectionHandlers(peerConnection: RTCPeerConnection) {
 
 function createPeerConnection(role: Exclude<P2PRole, 'solo'>) {
   closePeerConnectionOnly();
+  stopGuestRoomPoll();
   p2pState.role = role;
   p2pState.connected = false;
   const peerConnection = new RTCPeerConnection(RTC_CONFIGURATION);
@@ -2314,9 +2440,24 @@ async function createHostRoom() {
   stopHostHeartbeat();
   p2pState.hostHeartbeatTimerId = window.setInterval(() => {
     void heartbeatHostRoom();
-  }, 4_000);
+  }, P2P_HOST_HEARTBEAT_INTERVAL_MS);
+  void heartbeatHostRoom();
   syncP2pUi();
   notifyMultiplayerRoomCreated(response.room.id);
+}
+
+function failHostHeartbeatRoom(roomId: string) {
+  closePeerConnectionOnly();
+  stopHostHeartbeat();
+  stopGuestRoomPoll();
+  leaveDuelMode();
+  p2pState.role = 'solo';
+  void closeLobbyRoom(roomId).catch(() => undefined);
+  clearP2pRuntimeState();
+  setP2pStatus('error', '호스트 신호 확인이 반복 실패했습니다. 방을 다시 만들어 주세요.');
+  revealP2pPanel();
+  syncP2pUi();
+  notifyMultiplayerRoomCleared();
 }
 
 async function heartbeatHostRoom() {
@@ -2326,18 +2467,31 @@ async function heartbeatHostRoom() {
 
   try {
     const response = await heartbeatLobbyRoom(p2pState.roomId);
+    p2pState.hostHeartbeatFailures = 0;
     p2pState.hostedRoom = response.room;
     p2pState.rooms = p2pState.rooms.filter((room) => room.id !== response.room.id);
+    if (response.room.guestDisplayName && !p2pState.connected && p2pState.status === 'waiting-peer') {
+      setP2pStatus('connecting', `${response.room.guestDisplayName} 님이 참가했습니다. P2P 연결을 준비하는 중입니다.`);
+      revealP2pPanel();
+      setOverlay(`${response.room.guestDisplayName} 님이 온라인 매치에 참가했습니다.`);
+    }
     if (response.answer && response.answer !== p2pState.pendingRemoteAnswer) {
-      p2pState.pendingRemoteAnswer = response.answer;
       await p2pState.peerConnection.setRemoteDescription(JSON.parse(response.answer) as RTCSessionDescriptionInit);
+      p2pState.pendingRemoteAnswer = response.answer;
       setP2pStatus('connecting', '참가자의 answer를 적용했습니다. 데이터 채널이 열리면 매치가 시작됩니다.');
+      revealP2pPanel();
       syncP2pUi();
     }
-  } catch {
-    disconnectP2P(false);
-    setP2pStatus('error', '호스트 heartbeat가 끊겨 방이 종료되었습니다.');
     syncP2pUi();
+  } catch {
+    p2pState.hostHeartbeatFailures += 1;
+    if (p2pState.hostHeartbeatFailures < P2P_HOST_HEARTBEAT_FAILURE_LIMIT) {
+      setP2pStatus('connecting', '호스트 신호 확인이 잠시 지연되고 있습니다. 자동으로 재시도합니다.');
+      syncP2pUi();
+      return;
+    }
+
+    failHostHeartbeatRoom(p2pState.roomId);
   }
 }
 
@@ -2389,7 +2543,8 @@ async function joinRoomById(roomId: string) {
     answer: JSON.stringify(localDescription.toJSON()),
   });
   p2pState.rooms = p2pState.rooms.filter((room) => room.id !== roomSignal.room.id);
-  setP2pStatus('connecting', '방 참가를 요청했습니다. 호스트 heartbeat가 answer를 적용하면 연결이 성립됩니다.');
+  setP2pStatus('connecting', '방 참가를 요청했습니다. 호스트 브라우저가 응답을 확인하면 매치가 시작됩니다.');
+  startGuestRoomPoll(roomSignal.room.id);
   syncP2pUi();
 }
 

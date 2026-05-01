@@ -33,7 +33,7 @@ export const multiplayerController = {
   },
 
   detail(req: Request, res: Response) {
-    res.json(ok(multiplayerService.getRoom(req.params.roomId.toString())));
+    res.json(ok(multiplayerService.getRoom(req.params.roomId.toString(), identityFromRequest(req))));
   },
 
   join(req: Request, res: Response) {
