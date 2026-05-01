@@ -34,6 +34,9 @@ const virtualJoystickThumbNode = document.querySelector<HTMLElement>('#virtual-j
 const utilityMenuNode = document.querySelector<HTMLElement>('#utility-menu');
 const menuToggleNode = document.querySelector<HTMLButtonElement>('#menu-toggle');
 const menuPanelNode = document.querySelector<HTMLElement>('#menu-panel');
+const menuNoteNode = document.querySelector<HTMLElement>('#menu-note');
+const languageSelectNode = document.querySelector<HTMLSelectElement>('#language-select');
+const languageSelectLabelNode = document.querySelector<HTMLElement>('#language-select-label');
 const menuMatchButtonNode = document.querySelector<HTMLButtonElement>('#menu-match-button');
 const soundToggleNode = document.querySelector<HTMLButtonElement>('#sound-toggle');
 const objectiveNode = document.querySelector<HTMLElement>('#objective-text');
@@ -92,6 +95,9 @@ if (
   !utilityMenuNode ||
   !menuToggleNode ||
   !menuPanelNode ||
+  !menuNoteNode ||
+  !languageSelectNode ||
+  !languageSelectLabelNode ||
   !menuMatchButtonNode ||
   !soundToggleNode ||
   !objectiveNode ||
@@ -152,6 +158,9 @@ const virtualJoystickThumb = virtualJoystickThumbNode;
 const utilityMenu = utilityMenuNode;
 const menuToggleButton = menuToggleNode;
 const menuPanel = menuPanelNode;
+const menuNoteEl = menuNoteNode;
+const languageSelectEl = languageSelectNode;
+const languageSelectLabelEl = languageSelectLabelNode;
 const menuMatchButton = menuMatchButtonNode;
 const soundToggleButton = soundToggleNode;
 const objectiveEl = objectiveNode;
@@ -201,6 +210,383 @@ const visualViewport = window.visualViewport;
 const coarsePointerMedia = window.matchMedia('(pointer: coarse)');
 const urlParams = new URLSearchParams(window.location.search);
 const startsInEditorMode = urlParams.get('editor') === '1';
+
+type GameLanguage = 'ko' | 'en';
+type LocalizedText = Record<GameLanguage, string>;
+
+const LANGUAGE_STORAGE_KEY = 'cgw-language';
+const RUNTIME_COPY = {
+  ko: {
+    documentTitle: '용사의 여정 Runtime',
+    gameTitle: '용사의 여정',
+    loadingQuest: '여정을 준비하는 중입니다...',
+    menuLabel: '메뉴',
+    menuNote: '이동: WASD / 터치 이동<br />공격: Space<br />마법: Shift<br />구르기: C<br />막기: F',
+    language: '언어',
+    soundOn: '사운드 On',
+    soundOff: '사운드 Off',
+    soundEnabled: '사운드를 켰습니다. 첫 입력 이후 배경음악과 효과음이 재생됩니다.',
+    soundDisabled: '사운드를 껐습니다.',
+    onlineMatch: '온라인 매치',
+    closeOnlineMatch: '온라인 매치 닫기',
+    attack: '공격',
+    magic: '마법',
+    block: '막기',
+    dodge: '구르기',
+    p2pOpen: '열기',
+    p2pClose: '닫기',
+    offline: '오프라인',
+    loadingLobby: '로비 불러오는 중',
+    creatingRoom: '방 만드는 중',
+    joining: '참가 중',
+    waitingPeer: '참가 대기',
+    connecting: '연결 중',
+    connected: '연결됨',
+    error: '오류',
+    matchJoined: '매치 참가됨',
+    createRoom: '방 만들기',
+    joinRoom: '참가하기',
+    copyLink: '링크 복사',
+    rematch: '다시 대전',
+    acceptRematch: '재대전 수락',
+    waitingRequest: '요청 대기중',
+    disconnect: '연결 종료',
+    cancelWaiting: '대기 취소',
+    endMatch: '매치 종료',
+    newRoomName: '새 방 이름',
+    roomNamePlaceholder: '예: Seoul Raid Room',
+    refreshLobby: '로비 새로고침',
+    p2pDefaultHelp: '로비에서 방을 만들면 서버가 offer/answer 신호를 중계합니다. 호스트 heartbeat가 멈추면 방은 자동으로 정리됩니다.',
+    noRooms: '활성 방이 없습니다. 먼저 방을 만들거나 잠시 후 새로고침하세요.',
+    guestWaiting: '방에 참가 요청을 보냈습니다. 호스트 연결을 기다리는 중입니다.',
+    matchPreparing: '매치 연결을 준비하는 중입니다.',
+    myRoom: '내 방',
+    me: '나',
+    roomOwnedByMe: '내가 만든 방',
+    guestJoined: '{name} 참가',
+    matchConnected: '매치 연결됨',
+    guestConnecting: '{label} · 연결 중',
+    guestAnswerPending: '{label} · 응답 확인 중',
+    connectionPreparing: '연결 준비 중',
+    waitingGuest: '참가자 대기중',
+    roomOpen: '입장 가능',
+    roomJoining: '입장 처리 중',
+    roomFighting: '전투 중',
+    hostAccepted: '호스트가 참가 요청을 확인했습니다. 브라우저 P2P 연결을 여는 중입니다.',
+    hostReopened: '호스트가 방을 다시 열었습니다. 참가를 다시 시도해 주세요.',
+    roomStatusFailed: '방 상태를 확인하지 못했습니다. 호스트가 방을 닫았을 수 있습니다.',
+    chooseRoom: '방을 만들거나 로비 목록에서 참가할 방을 선택하세요.',
+    lobbyLoadingHelp: '활성 방 목록을 새로 불러오는 중입니다.',
+    lobbyRefreshed: '로비 목록을 새로고침했습니다.',
+    lobbyLoadFailed: '로비 목록을 불러오지 못했습니다. 잠시 후 다시 시도하세요.',
+    leftOnline: '온라인 매치를 종료하고 싱글 플레이로 돌아왔습니다.',
+    hostRoomCreated: '내 방이 생성되었습니다. 초대 링크를 공유하고 참가자를 기다리는 중입니다.',
+    hostRoomOverlay: '방 대기실을 만들었습니다. 참가자를 기다립니다.',
+    hostRoomFailed: '방 생성에 실패했습니다. 다시 시도하세요.',
+    publishingOffer: '방을 만들고 로비에 오퍼를 게시하는 중입니다.',
+    hostSignalFailed: '호스트 신호 확인이 반복 실패했습니다. 방을 다시 만들어 주세요.',
+    hostSignalDelayed: '호스트 신호 확인이 잠시 지연되고 있습니다. 자동으로 재시도합니다.',
+    peerJoinedStatus: '{name} 님이 참가했습니다. P2P 연결을 준비하는 중입니다.',
+    peerJoinedOverlay: '{name} 님이 온라인 매치에 참가했습니다.',
+    answerApplied: '참가자의 answer를 적용했습니다. 데이터 채널이 열리면 매치가 시작됩니다.',
+    selectRoomFirst: '참가할 방을 먼저 선택하세요.',
+    preparingJoin: '선택한 방 정보를 확인하고 참가를 준비하는 중입니다.',
+    applyingOffer: '선택한 방의 오퍼를 적용하고 answer를 서버에 등록하는 중입니다.',
+    joinRequested: '방 참가를 요청했습니다. 호스트 브라우저가 응답을 확인하면 매치가 시작됩니다.',
+    selectedRoomJoinOverlay: '선택한 방에 참가 요청을 보냈습니다. 연결을 기다립니다.',
+    roomJoinFailed: '방 참가에 실패했습니다. 이미 가득 찼거나 사라졌을 수 있습니다.',
+    roomCreateFailed: '방 생성에 실패했습니다.',
+    shareJoinRequested: '공유 링크의 방에 참가를 요청했습니다. 연결을 기다립니다.',
+    shareJoinFailed: '공유 링크로 방에 참가하지 못했습니다.',
+    refreshFailed: '로비 새로고침에 실패했습니다.',
+    createRoomBeforeCopy: '먼저 방을 만든 뒤 링크를 복사하세요.',
+    inviteCopied: '초대 링크를 복사했습니다.',
+    inviteShareTitle: '용사의 여정 온라인 매치 초대',
+    inviteShareText: '용사의 여정 온라인 매치에 참가하세요.',
+    shareOpened: '공유 메뉴를 열었습니다.',
+    inviteCopyFailed: '초대 링크 복사에 실패했습니다.',
+    peerConnected: '연결되었습니다. 두 플레이어 모두 같은 전장에서 실시간으로 대전합니다.',
+    dataChannelError: '데이터 채널 오류가 발생했습니다. 연결을 끊고 다시 시도하세요.',
+    peerConnecting: '상대 응답을 확인 중입니다. 연결이 성립되면 자동으로 매치가 시작됩니다.',
+    networkUnstable: '네트워크가 잠시 불안정합니다. 자동으로 재연결을 확인하는 중입니다.',
+    peerMessageFailed: '상대 메시지를 해석하지 못했습니다.',
+    rematchPeerRequested: '상대가 재대전을 요청했습니다. 수락하면 같은 연결로 새 라운드가 시작됩니다.',
+    rematchPeerSummary: '상대가 재대전을 요청했습니다. 다시 대전을 누르면 즉시 새 라운드가 시작됩니다.',
+    rematchPeerOverlay: '상대가 재대전을 요청했습니다.',
+    rematchDisconnectedStart: '상대 연결이 끊겨 재대전을 시작할 수 없습니다.',
+    rematchStarted: '재대전이 시작되었습니다. 같은 연결로 새 라운드를 진행합니다.',
+    rematchStartOverlay: '재대전 시작!',
+    rematchAvailableAfterEnd: '매치가 끝난 뒤 같은 연결에서 재대전을 요청할 수 있습니다.',
+    rematchDisconnectedRequest: '상대 연결이 끊겨 재대전을 요청할 수 없습니다.',
+    rematchRequested: '재대전을 요청했습니다. 상대 수락을 기다리는 중입니다.',
+    rematchRequestedSummary: '재대전을 요청했습니다. 상대가 수락하면 바로 새 라운드가 시작됩니다.',
+    rematchRequestedHelp: '재대전 요청을 보냈습니다.',
+    win: '승리',
+    lose: '패배',
+    victory: '승리했습니다. 다시 대전을 요청할 수 있습니다.',
+    defeat: '패배했습니다. 다시 대전을 요청할 수 있습니다.',
+    duelWinSummary: '상대를 제압했습니다. 같은 연결로 바로 재대전을 요청할 수 있습니다.',
+    duelLoseSummary: '이번 라운드는 패배했습니다. 재대전을 요청해 바로 다시 붙어보세요.',
+    duelObjective: '용사의 여정 대전',
+    remoteHud: '상대 HP {hp}/100 · Mana {mana}/80',
+    waitingRemote: '상대 연결 대기 중',
+    guardianProgress: '수호자 {defeated}/{total}',
+    openChest: '보물상자 열기',
+    escapeStairs: '북쪽 계단으로 탈출',
+    nextGate: '북쪽 게이트로 다음 층',
+    coins: '코인 {count}/{total}',
+    custom: 'Custom',
+    fallbackJourney: '여정',
+    nextFloorFallback: '다음 층',
+    loadingAssets: '여정 에셋과 씬을 준비하는 중입니다...',
+    startHint: '화면을 터치하거나 WASD로 이동해 모험을 시작하세요.',
+    finalChestOpened: '마지막 상자를 열었습니다. 북쪽 계단으로 탈출하세요.',
+    chestOpened: '상자를 열었습니다. 북쪽 게이트로 다음 층에 진입하세요.',
+    escapedScoreSubmitted: '탈출 성공. 점수를 제출했습니다.',
+    runEndedScoreSubmitted: '모험 종료. 점수를 제출했습니다.',
+    reviveOffer: '광고 시청을 선택하면 같은 전투 상태에서 1회 부활합니다.',
+    reviveDone: '부활 완료. 상자를 챙기고 게이트로 탈출하세요.',
+    noReviveEnded: '부활 없이 모험을 종료했습니다.',
+    allGuardiansDown: '모든 수호자를 처치했습니다. 보물상자를 여세요.',
+    defeatedEnemy: '{enemy}을 쓰러뜨렸습니다. 남은 적 {remaining}명',
+    enemyHit: '{enemy}을 가격했습니다. 남은 체력 {hp}/{maxHp}',
+    emptySwing: '허공을 가르기만 했습니다. 적에게 더 가까이 붙으세요.',
+    peerTooFar: '상대와 거리가 멉니다. 더 가까이 붙으세요.',
+    peerDefeated: '상대를 쓰러뜨렸습니다.',
+    peerMeleeHit: '검격 적중. 상대 체력 {hp} 남음',
+    peerMagicDefeated: '마법으로 상대를 쓰러뜨렸습니다.',
+    peerMagicHit: '마법 적중. 상대 체력 {hp} 남음',
+    incomingMagic: '상대 마법 적중. 체력 {hp} 남음',
+    incomingMelee: '상대 검격 적중. 체력 {hp} 남음',
+    dodgeMagic: '구르기로 마법을 회피했습니다.',
+    dodgeAttack: '구르기로 공격을 회피했습니다.',
+    blockMelee: '칼로 공격을 막아냈습니다.',
+    blockSuccess: '막기 성공. 체력 {hp} 남음',
+    rollMissing: '구르기 애니메이션을 아직 불러오지 못했습니다.',
+    rollNeedsDirection: '구르려면 이동 방향을 먼저 입력하세요.',
+    rolling: '구르기로 회피합니다.',
+    manaLow: '마나가 부족합니다. 잠시 기다리면 다시 회복됩니다.',
+    magicCast: '왼손 마법탄을 발사했습니다.',
+    enemyAttack: '{enemy}의 공격을 맞았습니다. 체력 {hp} 남음',
+    coinCollected: '코인을 회수했습니다. {count}/{total}',
+    magicLastGuardian: '마법으로 마지막 수호자를 쓰러뜨렸습니다. 보물상자를 여세요.',
+    magicEnemyDefeated: '마법으로 {enemy}을 쓰러뜨렸습니다. 남은 적 {remaining}명',
+    magicEnemyHit: '{enemy}에게 마법탄 적중. 남은 체력 {hp}/{maxHp}',
+    pursuePeer: '상대를 추적합니다. 사거리 안으로 들어가면 자동으로 근접 공격합니다.',
+    pursueEnemy: '적을 추적합니다. 사거리 안으로 들어가면 자동 공격합니다.',
+    enemyScout: '정찰병',
+    enemySpearman: '창병',
+    enemyBrute: '방패병',
+    enemyWarden: '오크 대장',
+    enemyGuard: '오크 경비병',
+    languageChanged: '언어가 변경되었습니다.',
+  },
+  en: {
+    documentTitle: "Hero's Journey Runtime",
+    gameTitle: "Hero's Journey",
+    loadingQuest: 'Preparing the journey...',
+    menuLabel: 'Menu',
+    menuNote: 'Move: WASD / touch move<br />Attack: Space<br />Magic: Shift<br />Dodge: C<br />Block: F',
+    language: 'Language',
+    soundOn: 'Sound On',
+    soundOff: 'Sound Off',
+    soundEnabled: 'Sound enabled. Music and effects will play after the first input.',
+    soundDisabled: 'Sound disabled.',
+    onlineMatch: 'Online Match',
+    closeOnlineMatch: 'Close Online Match',
+    attack: 'Attack',
+    magic: 'Magic',
+    block: 'Block',
+    dodge: 'Dodge',
+    p2pOpen: 'Open',
+    p2pClose: 'Close',
+    offline: 'Offline',
+    loadingLobby: 'Loading lobby',
+    creatingRoom: 'Creating room',
+    joining: 'Joining',
+    waitingPeer: 'Waiting for player',
+    connecting: 'Connecting',
+    connected: 'Connected',
+    error: 'Error',
+    matchJoined: 'Match joined',
+    createRoom: 'Create Room',
+    joinRoom: 'Join',
+    copyLink: 'Copy Link',
+    rematch: 'Rematch',
+    acceptRematch: 'Accept Rematch',
+    waitingRequest: 'Waiting...',
+    disconnect: 'Disconnect',
+    cancelWaiting: 'Cancel Wait',
+    endMatch: 'End Match',
+    newRoomName: 'New Room Name',
+    roomNamePlaceholder: 'e.g. Seoul Raid Room',
+    refreshLobby: 'Refresh Lobby',
+    p2pDefaultHelp: 'Create a room and the server relays offer/answer signals. Rooms are cleaned up automatically when the host heartbeat stops.',
+    noRooms: 'No active rooms. Create one first or refresh again shortly.',
+    guestWaiting: 'Join request sent. Waiting for the host connection.',
+    matchPreparing: 'Preparing the match connection.',
+    myRoom: 'My Room',
+    me: 'Me',
+    roomOwnedByMe: 'Hosted by me',
+    guestJoined: '{name} joined',
+    matchConnected: 'Match connected',
+    guestConnecting: '{label} · connecting',
+    guestAnswerPending: '{label} · checking response',
+    connectionPreparing: 'Preparing connection',
+    waitingGuest: 'Waiting for guest',
+    roomOpen: 'Open',
+    roomJoining: 'Joining',
+    roomFighting: 'In battle',
+    hostAccepted: 'The host confirmed your request. Opening the browser P2P connection.',
+    hostReopened: 'The host reopened the room. Try joining again.',
+    roomStatusFailed: 'Could not check room status. The host may have closed the room.',
+    chooseRoom: 'Create a room or choose one from the lobby.',
+    lobbyLoadingHelp: 'Refreshing active rooms.',
+    lobbyRefreshed: 'Lobby refreshed.',
+    lobbyLoadFailed: 'Could not load the lobby. Try again shortly.',
+    leftOnline: 'Online match ended. Returned to solo play.',
+    hostRoomCreated: 'Your room was created. Share the invite link and wait for a guest.',
+    hostRoomOverlay: 'Room lobby created. Waiting for a guest.',
+    hostRoomFailed: 'Could not create the room. Try again.',
+    publishingOffer: 'Creating room and publishing the offer to the lobby.',
+    hostSignalFailed: 'Host signaling repeatedly failed. Create the room again.',
+    hostSignalDelayed: 'Host signaling is delayed. Retrying automatically.',
+    peerJoinedStatus: '{name} joined. Preparing the P2P connection.',
+    peerJoinedOverlay: '{name} joined the online match.',
+    answerApplied: 'Guest answer applied. The match starts when the data channel opens.',
+    selectRoomFirst: 'Select a room first.',
+    preparingJoin: 'Checking the selected room and preparing to join.',
+    applyingOffer: 'Applying the room offer and registering your answer.',
+    joinRequested: 'Join request sent. The match starts when the host browser confirms it.',
+    selectedRoomJoinOverlay: 'Join request sent to the selected room. Waiting for connection.',
+    roomJoinFailed: 'Could not join the room. It may be full or gone.',
+    roomCreateFailed: 'Could not create the room.',
+    shareJoinRequested: 'Join request sent from the shared link. Waiting for connection.',
+    shareJoinFailed: 'Could not join from the shared link.',
+    refreshFailed: 'Failed to refresh the lobby.',
+    createRoomBeforeCopy: 'Create a room before copying the invite link.',
+    inviteCopied: 'Invite link copied.',
+    inviteShareTitle: "Hero's Journey Online Match Invite",
+    inviteShareText: "Join a Hero's Journey online match.",
+    shareOpened: 'Share menu opened.',
+    inviteCopyFailed: 'Could not copy the invite link.',
+    peerConnected: 'Connected. Both players are now in the same real-time arena.',
+    dataChannelError: 'Data channel error. Disconnect and try again.',
+    peerConnecting: 'Checking peer response. The match starts automatically when connected.',
+    networkUnstable: 'Network is unstable. Checking reconnection automatically.',
+    peerMessageFailed: 'Could not parse the peer message.',
+    rematchPeerRequested: 'Opponent requested a rematch. Accept to start a new round on the same connection.',
+    rematchPeerSummary: 'Opponent requested a rematch. Press rematch to start immediately.',
+    rematchPeerOverlay: 'Opponent requested a rematch.',
+    rematchDisconnectedStart: 'Cannot start a rematch because the opponent disconnected.',
+    rematchStarted: 'Rematch started. Playing a new round on the same connection.',
+    rematchStartOverlay: 'Rematch start!',
+    rematchAvailableAfterEnd: 'You can request a rematch after the match ends.',
+    rematchDisconnectedRequest: 'Cannot request a rematch because the opponent disconnected.',
+    rematchRequested: 'Rematch requested. Waiting for opponent acceptance.',
+    rematchRequestedSummary: 'Rematch requested. A new round starts when the opponent accepts.',
+    rematchRequestedHelp: 'Rematch request sent.',
+    win: 'Victory',
+    lose: 'Defeat',
+    victory: 'You won. You can request a rematch.',
+    defeat: 'You lost. You can request a rematch.',
+    duelWinSummary: 'You defeated the opponent. You can request a rematch on the same connection.',
+    duelLoseSummary: 'You lost this round. Request a rematch and fight again.',
+    duelObjective: "Hero's Journey Duel",
+    remoteHud: 'Opponent HP {hp}/100 · Mana {mana}/80',
+    waitingRemote: 'Waiting for opponent connection',
+    guardianProgress: 'Guardians {defeated}/{total}',
+    openChest: 'Open chest',
+    escapeStairs: 'Escape by the north stairs',
+    nextGate: 'Use the north gate',
+    coins: 'Coins {count}/{total}',
+    custom: 'Custom',
+    fallbackJourney: 'Journey',
+    nextFloorFallback: 'next floor',
+    loadingAssets: 'Preparing journey assets and scene...',
+    startHint: 'Touch the screen or move with WASD to begin the adventure.',
+    finalChestOpened: 'Final chest opened. Escape by the north stairs.',
+    chestOpened: 'Chest opened. Enter the next floor through the north gate.',
+    escapedScoreSubmitted: 'Escape successful. Score submitted.',
+    runEndedScoreSubmitted: 'Adventure ended. Score submitted.',
+    reviveOffer: 'Watch a reward ad to revive once in the same combat state.',
+    reviveDone: 'Revived. Grab the chest and escape through the gate.',
+    noReviveEnded: 'Adventure ended without revive.',
+    allGuardiansDown: 'All guardians defeated. Open the treasure chest.',
+    defeatedEnemy: '{enemy} defeated. {remaining} enemies left',
+    enemyHit: 'Hit {enemy}. HP {hp}/{maxHp} left',
+    emptySwing: 'You only cut the air. Move closer to the enemy.',
+    peerTooFar: 'Opponent is too far. Move closer.',
+    peerDefeated: 'Opponent defeated.',
+    peerMeleeHit: 'Melee hit. Opponent HP {hp} left',
+    peerMagicDefeated: 'Opponent defeated with magic.',
+    peerMagicHit: 'Magic hit. Opponent HP {hp} left',
+    incomingMagic: 'Opponent magic hit. HP {hp} left',
+    incomingMelee: 'Opponent strike hit. HP {hp} left',
+    dodgeMagic: 'Dodged the magic with a roll.',
+    dodgeAttack: 'Dodged the attack with a roll.',
+    blockMelee: 'Blocked the attack with your sword.',
+    blockSuccess: 'Block succeeded. HP {hp} left',
+    rollMissing: 'Roll animation is still loading.',
+    rollNeedsDirection: 'Choose a movement direction before rolling.',
+    rolling: 'Rolling to evade.',
+    manaLow: 'Not enough mana. Wait briefly to recover.',
+    magicCast: 'Fired a left-hand magic bolt.',
+    enemyAttack: '{enemy} hit you. HP {hp} left',
+    coinCollected: 'Coin collected. {count}/{total}',
+    magicLastGuardian: 'Last guardian defeated with magic. Open the treasure chest.',
+    magicEnemyDefeated: '{enemy} defeated with magic. {remaining} enemies left',
+    magicEnemyHit: 'Magic bolt hit {enemy}. HP {hp}/{maxHp} left',
+    pursuePeer: 'Chasing opponent. Auto melee attacks when in range.',
+    pursueEnemy: 'Chasing enemy. Auto attacks when in range.',
+    enemyScout: 'Scout',
+    enemySpearman: 'Spearman',
+    enemyBrute: 'Shield Guard',
+    enemyWarden: 'Orc Warden',
+    enemyGuard: 'Orc Guard',
+    languageChanged: 'Language changed.',
+  },
+} as const;
+
+let currentLanguage: GameLanguage = resolveRuntimeLanguage();
+
+function normalizeRuntimeLanguage(value: unknown): GameLanguage | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.toLowerCase();
+  if (normalized === 'ko' || normalized.startsWith('ko-')) {
+    return 'ko';
+  }
+  if (normalized === 'en' || normalized.startsWith('en-')) {
+    return 'en';
+  }
+
+  return null;
+}
+
+function resolveRuntimeLanguage(): GameLanguage {
+  try {
+    const storedLanguage = normalizeRuntimeLanguage(window.localStorage.getItem(LANGUAGE_STORAGE_KEY));
+    if (storedLanguage) {
+      return storedLanguage;
+    }
+  } catch {
+    // Ignore storage failures in private mode.
+  }
+
+  return [...navigator.languages, navigator.language].map(normalizeRuntimeLanguage).find(Boolean) ?? 'ko';
+}
+
+function t(key: keyof typeof RUNTIME_COPY.ko, values: Record<string, string | number> = {}) {
+  const template = RUNTIME_COPY[currentLanguage][key] ?? RUNTIME_COPY.ko[key];
+  return template.replace(/\{(\w+)\}/g, (_, name: string) => String(values[name] ?? `{${name}}`));
+}
+
+function localize(text: LocalizedText) {
+  return text[currentLanguage] ?? text.ko;
+}
 
 type ModelKey =
   | 'banner'
@@ -333,6 +719,7 @@ type EnemyUnit = {
   weapon: THREE.Group;
   shield: THREE.Group | null;
   rig: CharacterRig;
+  kind?: EnemyKind;
   label: string;
   hp: number;
   maxHp: number;
@@ -687,15 +1074,14 @@ type JourneyBiome = 'forest' | 'desert' | 'mountain' | 'ruin';
 
 type DungeonLevelConfig = {
   id: string;
-  name: string;
+  name: LocalizedText;
   biome: JourneyBiome;
-  quest: string;
-  intro: string;
-  clearText: string;
+  quest: LocalizedText;
+  intro: LocalizedText;
+  clearText: LocalizedText;
   map: DungeonMapConfig;
 };
 
-const GAME_TITLE = '용사의 여정';
 const GAME_SLUG = 'hero-journey';
 const GAME_PLAY_PATH = `/games/${GAME_SLUG}/play`;
 const MODEL_ROOT = '/assets/dungeon-quest/models';
@@ -885,8 +1271,7 @@ const P2P_HOST_HEARTBEAT_INTERVAL_MS = 1_500;
 const P2P_HOST_HEARTBEAT_FAILURE_LIMIT = 3;
 const P2P_GUEST_ROOM_POLL_INTERVAL_MS = 1_750;
 const P2P_DISCONNECT_GRACE_MS = 8_000;
-const DEFAULT_P2P_HELP_TEXT =
-  '로비에서 방을 만들면 서버가 offer/answer 신호를 중계합니다. 호스트 heartbeat가 멈추면 방은 자동으로 정리됩니다.';
+const DEFAULT_P2P_HELP_TEXT = RUNTIME_COPY.ko.p2pDefaultHelp;
 const PLAYER_MOVE_SPEED = 3.45;
 const PLAYER_BLOCK_SPEED = 1.72;
 const PLAYER_ROLL_COOLDOWN_MS = 880;
@@ -1298,11 +1683,11 @@ function createDungeonLevels(): DungeonLevelConfig[] {
 
   return [{
     id: 'gate-hall',
-    name: '입구 회랑',
+    name: { ko: '입구 회랑', en: 'Gate Hall' },
     biome: 'ruin',
-    quest: '흩어진 경비를 제압하고 첫 보물상자를 여세요.',
-    intro: '1층 입구 회랑입니다. 기본 경비를 정리하고 북쪽 통로를 여세요.',
-    clearText: '입구 회랑 돌파. 무너진 채석장으로 내려갑니다.',
+    quest: { ko: '흩어진 경비를 제압하고 첫 보물상자를 여세요.', en: 'Defeat the scattered guards and open the first treasure chest.' },
+    intro: { ko: '1층 입구 회랑입니다. 기본 경비를 정리하고 북쪽 통로를 여세요.', en: 'Floor 1: Gate Hall. Clear the guards and open the north passage.' },
+    clearText: { ko: '입구 회랑 돌파. 무너진 채석장으로 내려갑니다.', en: 'Gate Hall cleared. Descending to the collapsed quarry.' },
     map: {
       ...entrance,
       props: [
@@ -1343,11 +1728,11 @@ function createDungeonLevels(): DungeonLevelConfig[] {
   },
   {
     id: 'broken-quarry',
-    name: '무너진 채석장',
+    name: { ko: '무너진 채석장', en: 'Collapsed Quarry' },
     biome: 'ruin',
-    quest: '잔해와 함정을 지나 빠른 정찰병을 끊어내세요.',
-    intro: '2층은 무너진 채석장입니다. 흙바닥, 돌무더기, 함정이 길을 좁힙니다.',
-    clearText: '채석장 통로 확보. 오래된 금고로 진입합니다.',
+    quest: { ko: '잔해와 함정을 지나 빠른 정찰병을 끊어내세요.', en: 'Move through rubble and traps, then take down the fast scouts.' },
+    intro: { ko: '2층은 무너진 채석장입니다. 흙바닥, 돌무더기, 함정이 길을 좁힙니다.', en: 'Floor 2: Collapsed Quarry. Dirt, rock piles, and traps narrow your route.' },
+    clearText: { ko: '채석장 통로 확보. 오래된 금고로 진입합니다.', en: 'Quarry route secured. Entering the old vault.' },
     map: {
       ...quarry,
       props: [
@@ -1393,11 +1778,11 @@ function createDungeonLevels(): DungeonLevelConfig[] {
   },
   {
     id: 'old-vault',
-    name: '오래된 금고',
+    name: { ko: '오래된 금고', en: 'Old Vault' },
     biome: 'ruin',
-    quest: '방패병과 창병을 분리해서 금고 중심을 장악하세요.',
-    intro: '3층 금고입니다. 방패병이 길목을 막고 창병이 긴 사거리로 압박합니다.',
-    clearText: '금고 봉인 해제. 마지막 오크 대장 방으로 향합니다.',
+    quest: { ko: '방패병과 창병을 분리해서 금고 중심을 장악하세요.', en: 'Split the shield guards and spearmen, then control the vault center.' },
+    intro: { ko: '3층 금고입니다. 방패병이 길목을 막고 창병이 긴 사거리로 압박합니다.', en: 'Floor 3: Old Vault. Shield guards block lanes while spearmen pressure from range.' },
+    clearText: { ko: '금고 봉인 해제. 마지막 오크 대장 방으로 향합니다.', en: 'Vault seal broken. Moving toward the orc warden’s chamber.' },
     map: {
       ...vault,
       props: [
@@ -1443,11 +1828,11 @@ function createDungeonLevels(): DungeonLevelConfig[] {
   },
   {
     id: 'orc-keep',
-    name: '오크 대장 방',
+    name: { ko: '오크 대장 방', en: 'Orc Warden Keep' },
     biome: 'ruin',
-    quest: '대장을 호위병과 떼어내고 마지막 상자를 여세요.',
-    intro: '최종층입니다. 오크 대장과 호위대가 북쪽 성소를 지키고 있습니다.',
-    clearText: '오크 대장을 쓰러뜨렸습니다. 성채 밖 숲길이 열렸습니다.',
+    quest: { ko: '대장을 호위병과 떼어내고 마지막 상자를 여세요.', en: 'Separate the warden from the guards and open the final dungeon chest.' },
+    intro: { ko: '최종층입니다. 오크 대장과 호위대가 북쪽 성소를 지키고 있습니다.', en: 'Final dungeon floor. The orc warden and escorts guard the northern shrine.' },
+    clearText: { ko: '오크 대장을 쓰러뜨렸습니다. 성채 밖 숲길이 열렸습니다.', en: 'Orc warden defeated. The forest path beyond the keep is open.' },
     map: {
       ...keep,
       props: [
@@ -1494,11 +1879,11 @@ function createDungeonLevels(): DungeonLevelConfig[] {
   },
   {
     id: 'forest-road',
-    name: '숲의 들머리',
+    name: { ko: '숲의 들머리', en: 'Forest Edge' },
     biome: 'forest',
-    quest: '성채 밖 숲길의 정찰병을 제압하고 보급 상자를 여세요.',
-    intro: '성채를 빠져나오자 숲길이 이어집니다. 나무와 덤불 사이의 정찰병을 정리하세요.',
-    clearText: '숲길을 돌파했습니다. 사막 협곡으로 향합니다.',
+    quest: { ko: '성채 밖 숲길의 정찰병을 제압하고 보급 상자를 여세요.', en: 'Defeat scouts on the forest road and open the supply chest.' },
+    intro: { ko: '성채를 빠져나오자 숲길이 이어집니다. 나무와 덤불 사이의 정찰병을 정리하세요.', en: 'Beyond the keep, the road enters the forest. Clear scouts between trees and bushes.' },
+    clearText: { ko: '숲길을 돌파했습니다. 사막 협곡으로 향합니다.', en: 'Forest path cleared. Heading for the desert canyon.' },
     map: {
       ...entrance,
       props: [
@@ -1541,11 +1926,11 @@ function createDungeonLevels(): DungeonLevelConfig[] {
   },
   {
     id: 'sunken-canyon',
-    name: '사막 협곡',
+    name: { ko: '사막 협곡', en: 'Sunken Canyon' },
     biome: 'desert',
-    quest: '메마른 협곡의 바위와 함정을 지나 길잡이 몹을 끊어내세요.',
-    intro: '뜨거운 사막 협곡입니다. 바위, 마른 풀, 함정이 길을 좁힙니다.',
-    clearText: '사막 협곡을 벗어났습니다. 바람산 고갯길로 진입합니다.',
+    quest: { ko: '메마른 협곡의 바위와 함정을 지나 길잡이 몹을 끊어내세요.', en: 'Cross rocks and traps in the dry canyon, then cut down the pathfinders.' },
+    intro: { ko: '뜨거운 사막 협곡입니다. 바위, 마른 풀, 함정이 길을 좁힙니다.', en: 'A hot desert canyon. Rocks, dry plants, and traps squeeze the route.' },
+    clearText: { ko: '사막 협곡을 벗어났습니다. 바람산 고갯길로 진입합니다.', en: 'Desert canyon escaped. Entering Wind Pass.' },
     map: {
       ...quarry,
       props: [
@@ -1596,11 +1981,11 @@ function createDungeonLevels(): DungeonLevelConfig[] {
   },
   {
     id: 'wind-pass',
-    name: '바람산 고갯길',
+    name: { ko: '바람산 고갯길', en: 'Wind Pass' },
     biome: 'mountain',
-    quest: '산길의 창병과 방패병을 분리해 마지막 고개를 장악하세요.',
-    intro: '차가운 바람산 고갯길입니다. 산등성이와 돌무더기가 시야와 동선을 가릅니다.',
-    clearText: '고갯길을 넘어섰습니다. 출구 계단으로 여정을 마무리하세요.',
+    quest: { ko: '산길의 창병과 방패병을 분리해 마지막 고개를 장악하세요.', en: 'Separate the spearmen and shield guards to claim the final mountain pass.' },
+    intro: { ko: '차가운 바람산 고갯길입니다. 산등성이와 돌무더기가 시야와 동선을 가릅니다.', en: 'A cold mountain pass. Ridges and stone piles split sightlines and movement.' },
+    clearText: { ko: '고갯길을 넘어섰습니다. 출구 계단으로 여정을 마무리하세요.', en: 'Wind Pass crossed. Finish the journey at the exit stairs.' },
     map: {
       ...vault,
       props: [
@@ -1757,8 +2142,67 @@ function persistWeaponEditorState() {
 function syncSoundToggleUi() {
   soundToggleButton.dataset.enabled = String(audioState.enabled);
   soundToggleButton.setAttribute('aria-pressed', String(audioState.enabled));
-  soundToggleButton.textContent = audioState.enabled ? '사운드 On' : '사운드 Off';
+  soundToggleButton.textContent = audioState.enabled ? t('soundOn') : t('soundOff');
 }
+
+function syncRuntimeText() {
+  document.documentElement.lang = currentLanguage;
+  document.title = t('documentTitle');
+  languageSelectEl.value = currentLanguage;
+  languageSelectLabelEl.textContent = t('language');
+  menuToggleButton.setAttribute('aria-label', t('menuLabel'));
+  menuNoteEl.innerHTML = t('menuNote');
+  attackButton.textContent = t('attack');
+  magicButton.textContent = t('magic');
+  mobileAttackButton.textContent = t('attack');
+  mobileMagicButton.textContent = t('magic');
+  dodgeButton.textContent = t('dodge');
+  blockButton.textContent = t('block');
+  duelLobbyButtonEl.textContent = t('onlineMatch');
+  p2pHostButtonEl.textContent = t('createRoom');
+  p2pJoinButtonEl.textContent = t('joinRoom');
+  p2pCopyInviteButtonEl.textContent = t('copyLink');
+  p2pRefreshButtonEl.textContent = t('refreshLobby');
+  p2pRoomNameGroupEl.querySelector('label')!.textContent = t('newRoomName');
+  p2pRoomNameEl.placeholder = t('roomNamePlaceholder');
+  p2pState.helpText = t('p2pDefaultHelp');
+  for (const enemy of enemies) {
+    enemy.label = getEnemyLabel(enemy.kind);
+  }
+  syncSoundToggleUi();
+  syncUtilityMenu();
+  syncP2pUi();
+  syncHud();
+}
+
+function setRuntimeLanguage(language: GameLanguage, options: { persist?: boolean; announce?: boolean } = {}) {
+  const changed = language !== currentLanguage;
+  currentLanguage = language;
+
+  if (options.persist !== false) {
+    try {
+      window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+    } catch {
+      // Ignore storage failures in private mode.
+    }
+  }
+
+  syncRuntimeText();
+  if (options.announce && changed) {
+    setOverlay(t('languageChanged'));
+  }
+}
+
+window.addEventListener('storage', (event) => {
+  if (event.key !== LANGUAGE_STORAGE_KEY) {
+    return;
+  }
+
+  const nextLanguage = normalizeRuntimeLanguage(event.newValue);
+  if (nextLanguage) {
+    setRuntimeLanguage(nextLanguage, { persist: false, announce: true });
+  }
+});
 
 function ensureAudioSystem() {
   if (audioState.context) {
@@ -2005,12 +2449,12 @@ function toggleSound() {
   syncSoundToggleUi();
   if (audioState.enabled) {
     void unlockAudio();
-    setOverlay('사운드를 켰습니다. 첫 입력 이후 배경음악과 효과음이 재생됩니다.');
+    setOverlay(t('soundEnabled'));
     return;
   }
 
   setMasterVolume(0, 0.08);
-  setOverlay('사운드를 껐습니다.');
+  setOverlay(t('soundDisabled'));
 }
 
 function degToRad(value: number) {
@@ -2038,11 +2482,8 @@ function showDuelResultPanel(result: 'win' | 'lose') {
   duelResultPanelEl.hidden = false;
   duelResultPanelEl.dataset.result = result;
   duelResultBadgeEl.textContent = result === 'win' ? 'VICTORY' : 'DEFEAT';
-  duelResultTitleEl.textContent = result === 'win' ? '승리' : '패배';
-  duelResultSummaryEl.textContent =
-    result === 'win'
-      ? '상대를 제압했습니다. 같은 연결로 바로 재대전을 요청할 수 있습니다.'
-      : '이번 라운드는 패배했습니다. 재대전을 요청해 바로 다시 붙어보세요.';
+  duelResultTitleEl.textContent = result === 'win' ? t('win') : t('lose');
+  duelResultSummaryEl.textContent = result === 'win' ? t('duelWinSummary') : t('duelLoseSummary');
 }
 
 function syncP2pHelpText() {
@@ -2108,36 +2549,36 @@ function buildInviteLink(roomId: string) {
 
 async function copyInviteLink() {
   if (p2pState.role !== 'host' || !p2pState.roomId) {
-    flashP2pHelp('먼저 방을 만든 뒤 링크를 복사하세요.');
+    flashP2pHelp(t('createRoomBeforeCopy'));
     return;
   }
 
   const inviteLink = buildInviteLink(p2pState.roomId);
   try {
     await copyTextToClipboard(inviteLink);
-    flashP2pHelp('초대 링크를 복사했습니다.');
+    flashP2pHelp(t('inviteCopied'));
   } catch {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: `${GAME_TITLE} 온라인 매치 초대`,
-          text: `${GAME_TITLE} 온라인 매치에 참가하세요.`,
+          title: t('inviteShareTitle'),
+          text: t('inviteShareText'),
           url: inviteLink,
         });
-        flashP2pHelp('공유 메뉴를 열었습니다.');
+        flashP2pHelp(t('shareOpened'));
         return;
       } catch {
         // Keep the copy failure message when the share sheet is unavailable or canceled.
       }
     }
-    flashP2pHelp('초대 링크 복사에 실패했습니다.');
+    flashP2pHelp(t('inviteCopyFailed'));
   }
 }
 
 function syncUtilityMenu() {
   menuPanel.hidden = !utilityMenuOpen;
   menuToggleButton.setAttribute('aria-expanded', String(utilityMenuOpen));
-  menuMatchButton.textContent = p2pPanelEl.hidden ? '온라인 매치' : '온라인 매치 닫기';
+  menuMatchButton.textContent = p2pPanelEl.hidden ? t('onlineMatch') : t('closeOnlineMatch');
 }
 
 function setUtilityMenuOpen(next: boolean) {
@@ -2191,21 +2632,21 @@ function getRoleLabel(role: P2PRole) {
 function getStatusLabel(status: P2PStatus) {
   switch (status) {
     case 'loading-lobby':
-      return '로비 불러오는 중';
+      return t('loadingLobby');
     case 'creating-room':
-      return '방 만드는 중';
+      return t('creatingRoom');
     case 'joining':
-      return '참가 중';
+      return t('joining');
     case 'waiting-peer':
-      return '참가 대기';
+      return t('waitingPeer');
     case 'connecting':
-      return '연결 중';
+      return t('connecting');
     case 'connected':
-      return '연결됨';
+      return t('connected');
     case 'error':
-      return '오류';
+      return t('error');
     default:
-      return '오프라인';
+      return t('offline');
   }
 }
 
@@ -2221,7 +2662,7 @@ function setP2pStatus(status: P2PStatus, helpText?: string) {
 function syncP2pConnectedIndicator() {
   const visible = p2pState.connected && gameMode === 'duel' && p2pPanelEl.hidden;
   p2pConnectedIndicatorEl.hidden = !visible;
-  p2pConnectedIndicatorTextEl.textContent = '매치 참가됨';
+  p2pConnectedIndicatorTextEl.textContent = t('matchJoined');
 }
 
 function enterCompactMatchModeUi() {
@@ -2236,7 +2677,7 @@ function syncP2pUi() {
   const canRematch = p2pState.connected && gameMode === 'duel' && state.finished;
   p2pPanelEl.dataset.collapsed = String(p2pState.collapsed);
   p2pPanelEl.dataset.context = isRoomContext ? 'room' : 'lobby';
-  p2pToggleEl.textContent = p2pState.collapsed ? '열기' : '닫기';
+  p2pToggleEl.textContent = p2pState.collapsed ? t('p2pOpen') : t('p2pClose');
   p2pToggleEl.setAttribute('aria-expanded', String(!p2pState.collapsed));
   p2pStatusEl.textContent = getStatusLabel(p2pState.status);
   p2pRoleEl.textContent = getRoleLabel(p2pState.role);
@@ -2250,18 +2691,18 @@ function syncP2pUi() {
   p2pRematchButtonEl.hidden = !canRematch;
   p2pRematchButtonEl.disabled = !canRematch || isWaitingForRematch;
   p2pRematchButtonEl.textContent = p2pState.peerRematchRequested
-    ? '재대전 수락'
+    ? t('acceptRematch')
     : p2pState.rematchRequested
-      ? '요청 대기중'
-      : '다시 대전';
+      ? t('waitingRequest')
+      : t('rematch');
   duelRematchButtonEl.textContent = p2pState.peerRematchRequested
-    ? '재대전 수락'
+    ? t('acceptRematch')
     : p2pState.rematchRequested
-      ? '요청 대기중'
-      : '다시 대전';
+      ? t('waitingRequest')
+      : t('rematch');
   duelRematchButtonEl.disabled = !canRematch || isWaitingForRematch;
   p2pDisconnectButtonEl.textContent =
-    p2pState.status === 'waiting-peer' ? '대기 취소' : p2pState.connected ? '매치 종료' : '연결 종료';
+    p2pState.status === 'waiting-peer' ? t('cancelWaiting') : p2pState.connected ? t('endMatch') : t('disconnect');
   syncP2pConnectedIndicator();
   syncP2pHelpText();
   renderP2pRoomList();
@@ -2469,17 +2910,17 @@ function startGuestRoomPoll(roomId: string) {
       const response = await fetchLobbyRoom(roomId);
       failures = 0;
       if (response.room.status === 'connected') {
-        setP2pStatus('connecting', '호스트가 참가 요청을 확인했습니다. 브라우저 P2P 연결을 여는 중입니다.');
+        setP2pStatus('connecting', t('hostAccepted'));
         syncP2pUi();
       } else if (response.room.status === 'open') {
-        setP2pStatus('error', '호스트가 방을 다시 열었습니다. 참가를 다시 시도해 주세요.');
+        setP2pStatus('error', t('hostReopened'));
         stopGuestRoomPoll();
         syncP2pUi();
       }
     } catch {
       failures += 1;
       if (failures >= 3) {
-        setP2pStatus('error', '방 상태를 확인하지 못했습니다. 호스트가 방을 닫았을 수 있습니다.');
+        setP2pStatus('error', t('roomStatusFailed'));
         stopGuestRoomPoll();
         syncP2pUi();
       }
@@ -2488,17 +2929,17 @@ function startGuestRoomPoll(roomId: string) {
 }
 
 function roomTimeLabel(room: MultiplayerRoomSummary) {
-  return new Date(room.updatedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+  return new Date(room.updatedAt).toLocaleTimeString(currentLanguage === 'en' ? 'en-US' : 'ko-KR', { hour: '2-digit', minute: '2-digit' });
 }
 
 function roomStatusLabel(room: MultiplayerRoomSummary) {
   if (room.status === 'open') {
-    return '입장 가능';
+    return t('roomOpen');
   }
   if (room.status === 'joining') {
-    return '입장 처리 중';
+    return t('roomJoining');
   }
-  return '전투 중';
+  return t('roomFighting');
 }
 
 function appendRoomCardContent(item: HTMLElement, room: MultiplayerRoomSummary, statusLabel: string, ownerLabel: string) {
@@ -2534,8 +2975,8 @@ function renderHostedRoomCard() {
     ({
       id: p2pState.roomId,
       gameSlug: GAME_SLUG,
-      title: p2pRoomNameEl.value.trim() || '내 방',
-      hostDisplayName: '나',
+      title: p2pRoomNameEl.value.trim() || t('myRoom'),
+      hostDisplayName: t('me'),
       status: 'open',
       createdAt: now,
       updatedAt: now,
@@ -2543,17 +2984,17 @@ function renderHostedRoomCard() {
     } satisfies MultiplayerRoomSummary);
   const item = document.createElement('div');
   item.className = 'p2p-room-card p2p-room-card--owned';
-  const guestLabel = room.guestDisplayName ? `${room.guestDisplayName} 참가` : '';
+  const guestLabel = room.guestDisplayName ? t('guestJoined', { name: room.guestDisplayName }) : '';
   const statusLabel = p2pState.connected
-    ? '매치 연결됨'
+    ? t('matchConnected')
     : guestLabel
       ? p2pState.status === 'connecting'
-        ? `${guestLabel} · 연결 중`
-        : `${guestLabel} · 응답 확인 중`
+        ? t('guestConnecting', { label: guestLabel })
+        : t('guestAnswerPending', { label: guestLabel })
       : p2pState.status === 'connecting'
-        ? '연결 준비 중'
-        : '참가자 대기중';
-  appendRoomCardContent(item, room, statusLabel, '내가 만든 방');
+        ? t('connectionPreparing')
+        : t('waitingGuest');
+  appendRoomCardContent(item, room, statusLabel, t('roomOwnedByMe'));
   p2pRoomListEl.append(item);
   return true;
 }
@@ -2574,9 +3015,9 @@ function renderP2pRoomList() {
     empty.textContent =
       p2pState.roomId !== null
         ? p2pState.role === 'guest'
-          ? '방에 참가 요청을 보냈습니다. 호스트 연결을 기다리는 중입니다.'
-          : '매치 연결을 준비하는 중입니다.'
-        : '활성 방이 없습니다. 먼저 방을 만들거나 잠시 후 새로고침하세요.';
+          ? t('guestWaiting')
+          : t('matchPreparing')
+        : t('noRooms');
     p2pRoomListEl.append(empty);
     return;
   }
@@ -2603,12 +3044,12 @@ function renderP2pRoomList() {
         void unlockAudio();
         await joinSelectedRoom();
         setP2pCollapsed(false);
-        setOverlay('선택한 방에 참가 요청을 보냈습니다. 연결을 기다립니다.');
+        setOverlay(t('selectedRoomJoinOverlay'));
       } catch (error) {
         const message = error instanceof Error ? error.message : '';
-        setP2pStatus('error', message || '방 참가에 실패했습니다. 이미 가득 찼거나 사라졌을 수 있습니다.');
+        setP2pStatus('error', message || t('roomJoinFailed'));
         syncP2pUi();
-        setOverlay(message || '방 참가에 실패했습니다.');
+        setOverlay(message || t('roomJoinFailed'));
       }
     });
     p2pRoomListEl.append(item);
@@ -2626,7 +3067,7 @@ function startLobbyRefreshLoop() {
 }
 
 async function refreshLobby(showOverlay = false) {
-  setP2pStatus('loading-lobby', '활성 방 목록을 새로 불러오는 중입니다.');
+  setP2pStatus('loading-lobby', t('lobbyLoadingHelp'));
   syncP2pUi();
   try {
     p2pState.rooms = (await fetchLobbyRooms(GAME_SLUG)).filter((room) => room.id !== p2pState.roomId);
@@ -2636,17 +3077,17 @@ async function refreshLobby(showOverlay = false) {
     if (!p2pState.selectedRoomId && p2pState.rooms[0]) {
       p2pState.selectedRoomId = p2pState.rooms[0].id;
     }
-    setP2pStatus('offline', '방을 만들거나 로비 목록에서 참가할 방을 선택하세요.');
+    setP2pStatus('offline', t('chooseRoom'));
     syncP2pUi();
     if (showOverlay) {
-      setOverlay('로비 목록을 새로고침했습니다.');
+      setOverlay(t('lobbyRefreshed'));
     }
   } catch {
     p2pState.rooms = [];
-    setP2pStatus('error', '로비 목록을 불러오지 못했습니다. 잠시 후 다시 시도하세요.');
+    setP2pStatus('error', t('lobbyLoadFailed'));
     syncP2pUi();
     if (showOverlay) {
-      setOverlay('로비 목록을 불러오지 못했습니다.');
+      setOverlay(t('lobbyLoadFailed'));
     }
   }
 }
@@ -2675,7 +3116,7 @@ function disconnectP2P(showOverlay = true) {
   if (roomId) {
     void closeLobbyRoom(roomId).catch(() => undefined);
   }
-  setP2pStatus('offline', '방을 만들거나 로비 목록에서 참가할 방을 선택하세요.');
+  setP2pStatus('offline', t('chooseRoom'));
   clearP2pRuntimeState();
   void refreshLobby(false);
   syncP2pUi();
@@ -2683,7 +3124,7 @@ function disconnectP2P(showOverlay = true) {
     notifyMultiplayerRoomCleared();
   }
   if (showOverlay) {
-    setOverlay('온라인 매치를 종료하고 싱글 플레이로 돌아왔습니다.');
+    setOverlay(t('leftOnline'));
   }
 }
 
@@ -2702,7 +3143,7 @@ function handleIncomingPeerDamage(amount: number, kind: 'melee' | 'magic') {
     return;
   }
 
-  setOverlay(kind === 'magic' ? `상대 마법 적중. 체력 ${Math.round(state.health)} 남음` : `상대 검격 적중. 체력 ${Math.round(state.health)} 남음`);
+  setOverlay(kind === 'magic' ? t('incomingMagic', { hp: Math.round(state.health) }) : t('incomingMelee', { hp: Math.round(state.health) }));
 }
 
 function handleP2pMessage(message: P2PMessage) {
@@ -2777,9 +3218,9 @@ function handleP2pMessage(message: P2PMessage) {
 
       p2pState.peerRematchRequested = true;
       revealP2pPanel();
-      setP2pStatus('connected', '상대가 재대전을 요청했습니다. 수락하면 같은 연결로 새 라운드가 시작됩니다.');
-      duelResultSummaryEl.textContent = '상대가 재대전을 요청했습니다. 다시 대전을 누르면 즉시 새 라운드가 시작됩니다.';
-      setOverlay('상대가 재대전을 요청했습니다.');
+      setP2pStatus('connected', t('rematchPeerRequested'));
+      duelResultSummaryEl.textContent = t('rematchPeerSummary');
+      setOverlay(t('rematchPeerOverlay'));
       syncP2pUi();
       return;
     case 'REMATCH_ACCEPT':
@@ -2800,7 +3241,7 @@ function setupDataChannel(channel: RTCDataChannel) {
     clearPeerDisconnectTimer();
     stopGuestRoomPoll();
     p2pState.connected = true;
-    setP2pStatus('connected', '연결되었습니다. 두 플레이어 모두 같은 전장에서 실시간으로 대전합니다.');
+    setP2pStatus('connected', t('peerConnected'));
     startDuelMode();
     enterCompactMatchModeUi();
     setOverlay('');
@@ -2813,14 +3254,14 @@ function setupDataChannel(channel: RTCDataChannel) {
     }
   };
   channel.onerror = () => {
-    setP2pStatus('error', '데이터 채널 오류가 발생했습니다. 연결을 끊고 다시 시도하세요.');
+    setP2pStatus('error', t('dataChannelError'));
     syncP2pUi();
   };
   channel.onmessage = (event) => {
     try {
       handleP2pMessage(JSON.parse(String(event.data)) as P2PMessage);
     } catch {
-      setOverlay('상대 메시지를 해석하지 못했습니다.');
+      setOverlay(t('peerMessageFailed'));
     }
   };
 }
@@ -2830,12 +3271,12 @@ function attachPeerConnectionHandlers(peerConnection: RTCPeerConnection) {
     if (peerConnection.connectionState === 'connected') {
       clearPeerDisconnectTimer();
       p2pState.connected = true;
-      setP2pStatus('connected', '연결되었습니다. 두 플레이어 모두 같은 전장에서 실시간으로 대전합니다.');
+      setP2pStatus('connected', t('peerConnected'));
     } else if (peerConnection.connectionState === 'connecting') {
-      setP2pStatus('connecting', '상대 응답을 확인 중입니다. 연결이 성립되면 자동으로 매치가 시작됩니다.');
+      setP2pStatus('connecting', t('peerConnecting'));
     } else if (peerConnection.connectionState === 'disconnected') {
       p2pState.connected = false;
-      setP2pStatus('connecting', '네트워크가 잠시 불안정합니다. 자동으로 재연결을 확인하는 중입니다.');
+      setP2pStatus('connecting', t('networkUnstable'));
       schedulePeerDisconnectGrace(peerConnection);
     } else if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'closed') {
       disconnectP2P(true);
@@ -2852,7 +3293,7 @@ function attachPeerConnectionHandlers(peerConnection: RTCPeerConnection) {
 
     if (peerConnection.iceConnectionState === 'disconnected') {
       p2pState.connected = false;
-      setP2pStatus('connecting', '네트워크가 잠시 불안정합니다. 자동으로 재연결을 확인하는 중입니다.');
+      setP2pStatus('connecting', t('networkUnstable'));
       schedulePeerDisconnectGrace(peerConnection);
       syncP2pUi();
     } else if (peerConnection.iceConnectionState === 'failed' || peerConnection.iceConnectionState === 'closed') {
@@ -2884,7 +3325,7 @@ function createPeerConnection(role: Exclude<P2PRole, 'solo'>) {
 
 async function createHostRoom() {
   const peerConnection = createPeerConnection('host');
-  setP2pStatus('creating-room', '방을 만들고 로비에 오퍼를 게시하는 중입니다.');
+  setP2pStatus('creating-room', t('publishingOffer'));
   syncP2pUi();
   const offer = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offer);
@@ -2903,7 +3344,7 @@ async function createHostRoom() {
   p2pState.hostedRoom = response.room;
   p2pState.selectedRoomId = null;
   p2pState.rooms = p2pState.rooms.filter((room) => room.id !== response.room.id);
-  setP2pStatus('waiting-peer', '내 방이 생성되었습니다. 초대 링크를 공유하고 참가자를 기다리는 중입니다.');
+  setP2pStatus('waiting-peer', t('hostRoomCreated'));
   stopHostHeartbeat();
   p2pState.hostHeartbeatTimerId = window.setInterval(() => {
     void heartbeatHostRoom();
@@ -2921,7 +3362,7 @@ function failHostHeartbeatRoom(roomId: string) {
   p2pState.role = 'solo';
   void closeLobbyRoom(roomId).catch(() => undefined);
   clearP2pRuntimeState();
-  setP2pStatus('error', '호스트 신호 확인이 반복 실패했습니다. 방을 다시 만들어 주세요.');
+  setP2pStatus('error', t('hostSignalFailed'));
   revealP2pPanel();
   syncP2pUi();
   notifyMultiplayerRoomCleared();
@@ -2938,14 +3379,14 @@ async function heartbeatHostRoom() {
     p2pState.hostedRoom = response.room;
     p2pState.rooms = p2pState.rooms.filter((room) => room.id !== response.room.id);
     if (response.room.guestDisplayName && !p2pState.connected && p2pState.status === 'waiting-peer') {
-      setP2pStatus('connecting', `${response.room.guestDisplayName} 님이 참가했습니다. P2P 연결을 준비하는 중입니다.`);
+      setP2pStatus('connecting', t('peerJoinedStatus', { name: response.room.guestDisplayName }));
       revealP2pPanel();
-      setOverlay(`${response.room.guestDisplayName} 님이 온라인 매치에 참가했습니다.`);
+      setOverlay(t('peerJoinedOverlay', { name: response.room.guestDisplayName }));
     }
     if (response.answer && response.answer !== p2pState.pendingRemoteAnswer) {
       await p2pState.peerConnection.setRemoteDescription(JSON.parse(response.answer) as RTCSessionDescriptionInit);
       p2pState.pendingRemoteAnswer = response.answer;
-      setP2pStatus('connecting', '참가자의 answer를 적용했습니다. 데이터 채널이 열리면 매치가 시작됩니다.');
+      setP2pStatus('connecting', t('answerApplied'));
       revealP2pPanel();
       syncP2pUi();
     }
@@ -2953,7 +3394,7 @@ async function heartbeatHostRoom() {
   } catch {
     p2pState.hostHeartbeatFailures += 1;
     if (p2pState.hostHeartbeatFailures < P2P_HOST_HEARTBEAT_FAILURE_LIMIT) {
-      setP2pStatus('connecting', '호스트 신호 확인이 잠시 지연되고 있습니다. 자동으로 재시도합니다.');
+      setP2pStatus('connecting', t('hostSignalDelayed'));
       syncP2pUi();
       return;
     }
@@ -2964,7 +3405,7 @@ async function heartbeatHostRoom() {
 
 async function joinRoomById(roomId: string) {
   if (!roomId) {
-    setOverlay('참가할 방을 먼저 선택하세요.');
+    setOverlay(t('selectRoomFirst'));
     return;
   }
 
@@ -2984,7 +3425,7 @@ async function joinRoomById(roomId: string) {
   setP2pCollapsed(false);
   p2pState.selectedRoomId = roomId;
 
-  setP2pStatus('joining', '선택한 방 정보를 확인하고 참가를 준비하는 중입니다.');
+  setP2pStatus('joining', t('preparingJoin'));
   syncP2pUi();
 
   const roomSignal = await fetchLobbyRoom(roomId);
@@ -2995,7 +3436,7 @@ async function joinRoomById(roomId: string) {
   const peerConnection = createPeerConnection('guest');
   p2pState.roomId = roomSignal.room.id;
   p2pState.selectedRoomId = roomSignal.room.id;
-  setP2pStatus('joining', '선택한 방의 오퍼를 적용하고 answer를 서버에 등록하는 중입니다.');
+  setP2pStatus('joining', t('applyingOffer'));
   syncP2pUi();
   await peerConnection.setRemoteDescription(JSON.parse(roomSignal.offer) as RTCSessionDescriptionInit);
   const answer = await peerConnection.createAnswer();
@@ -3010,14 +3451,14 @@ async function joinRoomById(roomId: string) {
     answer: JSON.stringify(localDescription.toJSON()),
   });
   p2pState.rooms = p2pState.rooms.filter((room) => room.id !== roomSignal.room.id);
-  setP2pStatus('connecting', '방 참가를 요청했습니다. 호스트 브라우저가 응답을 확인하면 매치가 시작됩니다.');
+  setP2pStatus('connecting', t('joinRequested'));
   startGuestRoomPoll(roomSignal.room.id);
   syncP2pUi();
 }
 
 async function joinSelectedRoom() {
   if (!p2pState.selectedRoomId) {
-    setOverlay('참가할 방을 먼저 선택하세요.');
+    setOverlay(t('selectRoomFirst'));
     return;
   }
 
@@ -3920,15 +4361,15 @@ function attachShieldToLeftArm(mesh: THREE.Group, shield: THREE.Group, shieldKey
 function getEnemyLabel(kind: EnemyKind | undefined) {
   switch (kind) {
     case 'scout':
-      return '정찰병';
+      return t('enemyScout');
     case 'spearman':
-      return '창병';
+      return t('enemySpearman');
     case 'brute':
-      return '방패병';
+      return t('enemyBrute');
     case 'warden':
-      return '오크 대장';
+      return t('enemyWarden');
     default:
-      return '오크 경비병';
+      return t('enemyGuard');
   }
 }
 
@@ -4992,6 +5433,7 @@ function buildEnvironment() {
         weapon,
         shield,
         rig,
+        kind: spot.kind,
         label: getEnemyLabel(spot.kind),
         hp: spot.hp,
         maxHp: spot.hp,
@@ -5195,14 +5637,14 @@ function startDuelMode() {
 
 function restartDuelMatch() {
   if (!p2pState.connected || !p2pState.dataChannel || p2pState.dataChannel.readyState !== 'open') {
-    setOverlay('상대 연결이 끊겨 재대전을 시작할 수 없습니다.');
+    setOverlay(t('rematchDisconnectedStart'));
     return;
   }
 
   startDuelMode();
   enterCompactMatchModeUi();
-  setP2pStatus('connected', '재대전이 시작되었습니다. 같은 연결로 새 라운드를 진행합니다.');
-  setOverlay('재대전 시작!');
+  setP2pStatus('connected', t('rematchStarted'));
+  setOverlay(t('rematchStartOverlay'));
   sendDuelSnapshot();
   syncP2pUi();
 }
@@ -5213,7 +5655,7 @@ function acceptRematch() {
   }
 
   if (!sendP2pMessage({ type: 'REMATCH_ACCEPT' })) {
-    setOverlay('상대 연결이 끊겨 재대전을 시작할 수 없습니다.');
+    setOverlay(t('rematchDisconnectedStart'));
     syncP2pUi();
     return;
   }
@@ -5223,7 +5665,7 @@ function acceptRematch() {
 
 function requestRematch() {
   if (!p2pState.connected || gameMode !== 'duel' || !state.finished) {
-    flashP2pHelp('매치가 끝난 뒤 같은 연결에서 재대전을 요청할 수 있습니다.');
+    flashP2pHelp(t('rematchAvailableAfterEnd'));
     return;
   }
 
@@ -5233,15 +5675,15 @@ function requestRematch() {
   }
 
   if (!sendP2pMessage({ type: 'REMATCH_REQUEST' })) {
-    setOverlay('상대 연결이 끊겨 재대전을 요청할 수 없습니다.');
+    setOverlay(t('rematchDisconnectedRequest'));
     syncP2pUi();
     return;
   }
 
   p2pState.rematchRequested = true;
-  setP2pStatus('connected', '재대전을 요청했습니다. 상대 수락을 기다리는 중입니다.');
-  duelResultSummaryEl.textContent = '재대전을 요청했습니다. 상대가 수락하면 바로 새 라운드가 시작됩니다.';
-  flashP2pHelp('재대전 요청을 보냈습니다.');
+  setP2pStatus('connected', t('rematchRequested'));
+  duelResultSummaryEl.textContent = t('rematchRequestedSummary');
+  flashP2pHelp(t('rematchRequestedHelp'));
   syncP2pUi();
 }
 
@@ -5266,10 +5708,10 @@ function finishDuel(result: 'win' | 'lose') {
   if (result === 'win') {
     playCue('victory');
     addScore(1500);
-    setOverlay('승리했습니다. 다시 대전을 요청할 수 있습니다.');
+    setOverlay(t('victory'));
   } else {
     playCue('defeat');
-    setOverlay('패배했습니다. 다시 대전을 요청할 수 있습니다.');
+    setOverlay(t('defeat'));
   }
   showDuelResultPanel(result);
   revealP2pPanel();
@@ -5280,10 +5722,10 @@ function syncHud() {
   if (gameMode === 'duel') {
     const remoteHealth = remotePeerAvatar ? Math.max(0, Math.round(remotePeerAvatar.health)) : 100;
     const remoteMana = remotePeerAvatar ? Math.max(0, Math.round(remotePeerAvatar.mana)) : 80;
-    objectiveEl.textContent = `${GAME_TITLE} 대전`;
+    objectiveEl.textContent = t('duelObjective');
     questEl.textContent = p2pState.connected
-      ? `상대 HP ${remoteHealth}/100 · Mana ${remoteMana}/80`
-      : '상대 연결 대기 중';
+      ? t('remoteHud', { hp: remoteHealth, mana: remoteMana })
+      : t('waitingRemote');
     scoreEl.textContent = state.score.toLocaleString();
     timerEl.textContent = formatTime(state.totalTimeMs - state.elapsedMs);
     healthFillEl.style.width = `${(state.health / state.maxHealth) * 100}%`;
@@ -5296,18 +5738,18 @@ function syncHud() {
   const aliveEnemies = enemies.filter((enemy) => enemy.alive).length;
   const activeLevel = getActiveLevel();
   const levelLabel = isCustomMapMode()
-    ? 'Custom'
-    : `${state.levelIndex + 1}/${DUNGEON_LEVELS.length} ${activeLevel?.name ?? '여정'}`;
+    ? t('custom')
+    : `${state.levelIndex + 1}/${DUNGEON_LEVELS.length} ${activeLevel ? localize(activeLevel.name) : t('fallbackJourney')}`;
   const stageText = aliveEnemies > 0
-    ? `수호자 ${state.enemiesDefeated}/${enemies.length}`
+    ? t('guardianProgress', { defeated: state.enemiesDefeated, total: enemies.length })
     : !state.chestOpen
-      ? '보물상자 열기'
+      ? t('openChest')
       : isFinalLevel()
-        ? '북쪽 계단으로 탈출'
-        : '북쪽 게이트로 다음 층';
+        ? t('escapeStairs')
+        : t('nextGate');
 
-  objectiveEl.textContent = `${GAME_TITLE} · ${levelLabel}`;
-  questEl.textContent = `${stageText} · 코인 ${state.coinsCollected}/${coins.length}`;
+  objectiveEl.textContent = `${t('gameTitle')} · ${levelLabel}`;
+  questEl.textContent = `${stageText} · ${t('coins', { count: state.coinsCollected, total: coins.length })}`;
   scoreEl.textContent = state.score.toLocaleString();
   timerEl.textContent = formatTime(state.totalTimeMs - state.elapsedMs);
   healthFillEl.style.width = `${(state.health / state.maxHealth) * 100}%`;
@@ -5439,7 +5881,7 @@ function attemptPeerAttack() {
   const distance = remotePeerAvatar.mesh.position.distanceTo(sceneAssets.player.position);
   if (distance > 1.42) {
     playCue('miss');
-    setOverlay('상대와 거리가 멉니다. 더 가까이 붙으세요.');
+    setOverlay(t('peerTooFar'));
     return false;
   }
 
@@ -5454,7 +5896,7 @@ function attemptPeerAttack() {
       kind: 'melee',
     },
   });
-  setOverlay(remotePeerAvatar.health <= 0 ? '상대를 쓰러뜨렸습니다.' : `검격 적중. 상대 체력 ${Math.round(remotePeerAvatar.health)} 남음`);
+  setOverlay(remotePeerAvatar.health <= 0 ? t('peerDefeated') : t('peerMeleeHit', { hp: Math.round(remotePeerAvatar.health) }));
   if (remotePeerAvatar.health <= 0) {
     finishDuel('win');
   }
@@ -5478,7 +5920,7 @@ function openChest() {
   addScore(isFinalLevel() ? 620 : 420);
   playCue('chest');
   spawnEffect(getMapPointVector(dungeonMapConfig.chest), '#ffe27a');
-  setOverlay(isFinalLevel() ? '마지막 상자를 열었습니다. 북쪽 계단으로 탈출하세요.' : '상자를 열었습니다. 북쪽 게이트로 다음 층에 진입하세요.');
+  setOverlay(isFinalLevel() ? t('finalChestOpened') : t('chestOpened'));
   return true;
 }
 
@@ -5523,7 +5965,7 @@ function advanceToNextLevel() {
   syncHud();
   playCue('victory');
   spawnEffect(sceneAssets.player.position, '#7dffb3');
-  setOverlay(clearedLevel?.clearText ?? `${getActiveLevel()?.name ?? '다음 층'}으로 이동했습니다.`);
+  setOverlay(clearedLevel ? localize(clearedLevel.clearText) : t('nextFloorFallback'));
   return true;
 }
 
@@ -5549,7 +5991,7 @@ function finishRun(reason: string, allowRevive: boolean) {
       reason,
       reviveAvailable: allowRevive,
       levelIndex: state.levelIndex,
-      levelName: getActiveLevel()?.name ?? 'custom',
+      levelName: getActiveLevel() ? localize(getActiveLevel()!.name) : 'custom',
       levelsCompleted: reason === 'escaped' ? DUNGEON_LEVELS.length : state.levelIndex,
       coinsCollected: state.coinsCollected,
       enemiesDefeated: state.enemiesDefeated,
@@ -5560,13 +6002,13 @@ function finishRun(reason: string, allowRevive: boolean) {
 
   if (allowRevive && state.reviveAvailable) {
     state.waitingReward = true;
-    setOverlay('광고 시청을 선택하면 같은 전투 상태에서 1회 부활합니다.');
+    setOverlay(t('reviveOffer'));
     requestRewardedAd('REVIVE');
     return;
   }
 
   state.finalized = true;
-  setOverlay(reason === 'escaped' ? '탈출 성공. 점수를 제출했습니다.' : '모험 종료. 점수를 제출했습니다.');
+  setOverlay(reason === 'escaped' ? t('escapedScoreSubmitted') : t('runEndedScoreSubmitted'));
 }
 
 function revivePlayer() {
@@ -5597,7 +6039,7 @@ function revivePlayer() {
   clearMagicProjectiles();
   playCue('revive');
   spawnEffect(sceneAssets.player.position, '#7dffb3');
-  setOverlay('부활 완료. 상자를 챙기고 게이트로 탈출하세요.');
+  setOverlay(t('reviveDone'));
 }
 
 function attemptEnemyAttack(preferredEnemy?: EnemyUnit | null) {
@@ -5627,7 +6069,7 @@ function attemptEnemyAttack(preferredEnemy?: EnemyUnit | null) {
 
   if (!enemy) {
     playCue('miss');
-    setOverlay('허공을 가르기만 했습니다. 적에게 더 가까이 붙으세요.');
+    setOverlay(t('emptySwing'));
     return false;
   }
 
@@ -5643,8 +6085,8 @@ function attemptEnemyAttack(preferredEnemy?: EnemyUnit | null) {
     spawnEffect(enemy.mesh.position, '#ff8d77');
     setOverlay(
       state.enemiesDefeated === enemies.length
-        ? '모든 수호자를 처치했습니다. 보물상자를 여세요.'
-        : `${enemy.label}을 쓰러뜨렸습니다. 남은 적 ${enemies.length - state.enemiesDefeated}명`,
+        ? t('allGuardiansDown')
+        : t('defeatedEnemy', { enemy: enemy.label, remaining: enemies.length - state.enemiesDefeated }),
     );
     if (pursuedEnemy === enemy) {
       clearPursuedEnemy();
@@ -5653,7 +6095,7 @@ function attemptEnemyAttack(preferredEnemy?: EnemyUnit | null) {
   }
 
   addScore(36);
-  setOverlay(`${enemy.label}을 가격했습니다. 남은 체력 ${enemy.hp}/${enemy.maxHp}`);
+  setOverlay(t('enemyHit', { enemy: enemy.label, hp: enemy.hp, maxHp: enemy.maxHp }));
   return true;
 }
 
@@ -5768,7 +6210,7 @@ function resolveIncomingPlayerDamage(amount: number, kind: 'melee' | 'magic', so
   if (sceneAssets.playerRig.rolling && sceneAssets.playerRig.rollMs >= sceneAssets.playerRig.rollDurationMs * 0.18) {
     playCue('miss');
     spawnEffect(sceneAssets.player.position.clone().add(new THREE.Vector3(0, 0.08, 0)), '#8fd7ff');
-    setOverlay(kind === 'magic' ? '구르기로 마법을 회피했습니다.' : '구르기로 공격을 회피했습니다.');
+    setOverlay(kind === 'magic' ? t('dodgeMagic') : t('dodgeAttack'));
     return false;
   }
 
@@ -5778,10 +6220,10 @@ function resolveIncomingPlayerDamage(amount: number, kind: 'melee' | 'magic', so
     playCue('miss');
     spawnEffect(sceneAssets.player.position.clone().add(new THREE.Vector3(0, 0.08, 0)), '#cbe7ff');
     if (actualDamage <= 0) {
-      setOverlay('칼로 공격을 막아냈습니다.');
+      setOverlay(t('blockMelee'));
       return false;
     }
-    setOverlay(`막기 성공. 체력 ${Math.max(0, Math.round(state.health - actualDamage))} 남음`);
+    setOverlay(t('blockSuccess', { hp: Math.max(0, Math.round(state.health - actualDamage)) }));
   }
 
   state.health = Math.max(0, state.health - actualDamage);
@@ -5798,7 +6240,7 @@ function attemptRoll() {
   }
 
   if (!sceneAssets.playerRig.actions.roll) {
-    setOverlay('구르기 애니메이션을 아직 불러오지 못했습니다.');
+    setOverlay(t('rollMissing'));
     return false;
   }
 
@@ -5814,7 +6256,7 @@ function attemptRoll() {
 
   const direction = getPlayerIntentDirection();
   if (!direction || direction.lengthSq() <= 0.0001) {
-    setOverlay('구르려면 이동 방향을 먼저 입력하세요.');
+    setOverlay(t('rollNeedsDirection'));
     return false;
   }
 
@@ -5827,7 +6269,7 @@ function attemptRoll() {
   sceneAssets.playerRig.blocking = false;
   faceDirection(sceneAssets.player, direction);
   playCue('miss');
-  setOverlay('구르기로 회피합니다.');
+  setOverlay(t('rolling'));
   return true;
 }
 
@@ -5857,7 +6299,7 @@ function castLeftHandMagic() {
   const manaCost = 24;
   if (state.mana < manaCost) {
     playCue('mana-empty');
-    setOverlay('마나가 부족합니다. 잠시 기다리면 다시 회복됩니다.');
+    setOverlay(t('manaLow'));
     return false;
   }
 
@@ -5884,7 +6326,7 @@ function castLeftHandMagic() {
     });
   }
   runtimeMagicFlash(sceneAssets.player.position);
-  setOverlay('왼손 마법탄을 발사했습니다.');
+  setOverlay(t('magicCast'));
   return true;
 }
 
@@ -6114,7 +6556,7 @@ function updateEnemies(deltaMs: number) {
       if (!applied) {
         continue;
       }
-      setOverlay(`${enemy.label}의 공격을 맞았습니다. 체력 ${Math.round(state.health)} 남음`);
+      setOverlay(t('enemyAttack', { enemy: enemy.label, hp: Math.round(state.health) }));
 
       if (state.health <= 0) {
         finishRun('defeated', state.reviveAvailable);
@@ -6211,7 +6653,7 @@ function updateCoins(deltaMs: number) {
       addScore(coin.value);
       playCue('coin');
       spawnEffect(coin.mesh.position, '#ffe27a');
-      setOverlay(`코인을 회수했습니다. ${state.coinsCollected}/${coins.length}`);
+      setOverlay(t('coinCollected', { count: state.coinsCollected, total: coins.length }));
     }
   }
 }
@@ -6261,7 +6703,7 @@ function updateMagic(deltaMs: number) {
                 kind: 'magic',
               },
             });
-            setOverlay(remotePeerAvatar.health <= 0 ? '마법으로 상대를 쓰러뜨렸습니다.' : `마법 적중. 상대 체력 ${Math.round(remotePeerAvatar.health)} 남음`);
+            setOverlay(remotePeerAvatar.health <= 0 ? t('peerMagicDefeated') : t('peerMagicHit', { hp: Math.round(remotePeerAvatar.health) }));
             if (remotePeerAvatar.health <= 0) {
               finishDuel('win');
             }
@@ -6300,12 +6742,12 @@ function updateMagic(deltaMs: number) {
             }
             setOverlay(
               state.enemiesDefeated === enemies.length
-                ? '마법으로 마지막 수호자를 쓰러뜨렸습니다. 보물상자를 여세요.'
-                : `마법으로 ${enemy.label}을 쓰러뜨렸습니다. 남은 적 ${enemies.length - state.enemiesDefeated}명`,
+                ? t('magicLastGuardian')
+                : t('magicEnemyDefeated', { enemy: enemy.label, remaining: enemies.length - state.enemiesDefeated }),
             );
           } else {
             addScore(28);
-            setOverlay(`${enemy.label}에게 마법탄 적중. 남은 체력 ${enemy.hp}/${enemy.maxHp}`);
+            setOverlay(t('magicEnemyHit', { enemy: enemy.label, hp: enemy.hp, maxHp: enemy.maxHp }));
           }
 
           break;
@@ -6482,7 +6924,7 @@ function onPointerDown(event: PointerEvent) {
       if (sceneAssets && tappedPeer.mesh.position.distanceTo(sceneAssets.player.position) <= 1.32) {
         attemptPeerAttack();
       } else {
-        setOverlay('상대를 추적합니다. 사거리 안으로 들어가면 자동으로 근접 공격합니다.');
+        setOverlay(t('pursuePeer'));
       }
       return;
     }
@@ -6500,7 +6942,7 @@ function onPointerDown(event: PointerEvent) {
     if (sceneAssets && tappedEnemy.mesh.position.distanceTo(sceneAssets.player.position) <= 1.02 + tappedEnemy.radius) {
       attemptEnemyAttack(tappedEnemy);
     } else {
-      setOverlay('적을 추적합니다. 사거리 안으로 들어가면 자동 공격합니다.');
+      setOverlay(t('pursueEnemy'));
     }
     return;
   }
@@ -6721,6 +7163,13 @@ function mountEvents() {
     toggleSound();
     setUtilityMenuOpen(false);
   });
+  languageSelectEl.addEventListener('change', (event) => {
+    event.stopPropagation();
+    const nextLanguage = normalizeRuntimeLanguage((event.target as HTMLSelectElement).value);
+    if (nextLanguage) {
+      setRuntimeLanguage(nextLanguage, { announce: true });
+    }
+  });
   const bindInstantActionButton = (button: HTMLButtonElement, action: () => void) => {
     button.addEventListener('pointerdown', (event) => {
       event.preventDefault();
@@ -6817,11 +7266,11 @@ function mountEvents() {
       void unlockAudio();
       await createHostRoom();
       setP2pCollapsed(false);
-      setOverlay('방 대기실을 만들었습니다. 참가자를 기다립니다.');
+      setOverlay(t('hostRoomOverlay'));
     } catch {
-      setP2pStatus('error', '방 생성에 실패했습니다. 다시 시도하세요.');
+      setP2pStatus('error', t('hostRoomFailed'));
       syncP2pUi();
-      setOverlay('방 생성에 실패했습니다.');
+      setOverlay(t('roomCreateFailed'));
     }
   });
   p2pJoinButtonEl.addEventListener('pointerdown', async (event) => {
@@ -6831,12 +7280,12 @@ function mountEvents() {
       void unlockAudio();
       await joinSelectedRoom();
       setP2pCollapsed(false);
-      setOverlay('선택한 방에 참가 요청을 보냈습니다. 연결을 기다립니다.');
+      setOverlay(t('selectedRoomJoinOverlay'));
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
-      setP2pStatus('error', message || '방 참가에 실패했습니다. 이미 가득 찼거나 사라졌을 수 있습니다.');
+      setP2pStatus('error', message || t('roomJoinFailed'));
       syncP2pUi();
-      setOverlay(message || '방 참가에 실패했습니다.');
+      setOverlay(message || t('roomJoinFailed'));
     }
   });
   p2pRefreshButtonEl.addEventListener('pointerdown', async (event) => {
@@ -6845,7 +7294,7 @@ function mountEvents() {
     try {
       await refreshLobby(true);
     } catch {
-      setOverlay('로비 새로고침에 실패했습니다.');
+      setOverlay(t('refreshFailed'));
     }
   });
   p2pCopyInviteButtonEl.addEventListener('click', async (event) => {
@@ -6885,9 +7334,9 @@ async function handleJoinRoomRequest(roomId: string) {
 
   try {
     await joinRoomById(roomId);
-    setOverlay('공유 링크의 방에 참가를 요청했습니다. 연결을 기다립니다.');
+    setOverlay(t('shareJoinRequested'));
   } catch (error) {
-    const message = error instanceof Error ? error.message : '공유 링크로 방에 참가하지 못했습니다.';
+    const message = error instanceof Error ? error.message : t('shareJoinFailed');
     setP2pStatus('error', message);
     syncP2pUi();
     setOverlay(message);
@@ -6907,7 +7356,7 @@ function bindHostMessages() {
       state.finished = true;
       state.finalized = true;
       playCue('defeat');
-      setOverlay('부활 없이 모험을 종료했습니다.');
+      setOverlay(t('noReviveEnded'));
       return;
     }
 
@@ -6924,16 +7373,17 @@ async function initialize() {
   mobileMagicButton.disabled = true;
   dodgeButton.disabled = true;
   blockButton.disabled = true;
+  syncRuntimeText();
   syncSoundToggleUi();
   syncP2pUi();
-  setOverlay('여정 에셋과 씬을 준비하는 중입니다...');
+  setOverlay(t('loadingAssets'));
   await loadTemplates();
   resetState();
   createSceneAssets();
   resizeRenderer();
   updateCamera();
   syncHud();
-  setOverlay(getActiveLevel()?.intro ?? '화면을 터치하거나 WASD로 이동해 모험을 시작하세요.');
+  setOverlay(getActiveLevel() ? localize(getActiveLevel()!.intro) : t('startHint'));
   attackButton.disabled = false;
   magicButton.disabled = false;
   mobileAttackButton.disabled = false;

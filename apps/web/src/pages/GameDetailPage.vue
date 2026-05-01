@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { onMounted, watch } from 'vue';
+import { computed, onMounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import AdSlot from '@/components/ads/AdSlot.vue';
 import GameGrid from '@/components/game/GameGrid.vue';
+import { currentLanguage } from '@/i18n/language';
+import { getLocalizedGameCopy, getLocalizedInputLabel, getLocalizedModeLabel } from '@/i18n/game-copy';
 import LeaderboardTable from '@/components/ranking/LeaderboardTable.vue';
 import { useGameStore } from '@/stores/game.store';
 import { useRankingStore } from '@/stores/ranking.store';
@@ -13,6 +15,24 @@ import { formatCompact, formatScore } from '@/utils/format';
 const route = useRoute();
 const gameStore = useGameStore();
 const rankingStore = useRankingStore();
+const localizedGame = computed(() => (gameStore.currentGame ? getLocalizedGameCopy(gameStore.currentGame) : null));
+const copy = computed(() => ({
+  gameDetail: currentLanguage.value === 'en' ? 'Game Detail' : '게임 상세',
+  plays: currentLanguage.value === 'en' ? 'Plays' : '플레이 수',
+  bestScore: currentLanguage.value === 'en' ? 'All-time Best' : '전체 최고점',
+  averageSession: currentLanguage.value === 'en' ? 'Average Session' : '평균 세션',
+  seconds: currentLanguage.value === 'en' ? 'sec' : '초',
+  playNow: currentLanguage.value === 'en' ? 'Play Now' : '지금 플레이',
+  ranking: currentLanguage.value === 'en' ? 'View Rankings' : '랭킹 보기',
+  todaysRanking: currentLanguage.value === 'en' ? 'Today’s Ranking' : '오늘의 랭킹',
+  howToPlay: currentLanguage.value === 'en' ? 'How to Play' : '게임 방법',
+  controls: currentLanguage.value === 'en' ? 'Controls' : '조작 입력',
+  scoreMode: currentLanguage.value === 'en' ? 'Score Mode' : '점수 모드',
+  rankingRule: currentLanguage.value === 'en' ? 'Ranking Rule' : '랭킹 기준',
+  higherBetter: currentLanguage.value === 'en' ? 'Higher score first' : '높은 점수 우선',
+  lowerBetter: currentLanguage.value === 'en' ? 'Lower score first' : '낮은 점수 우선',
+  related: currentLanguage.value === 'en' ? 'Related Games' : '같이 보면 좋은 게임',
+}));
 
 async function load() {
   const slug = route.params.slug.toString();
@@ -37,30 +57,30 @@ watch(() => route.params.slug, () => {
   <section v-if="gameStore.currentGame" class="content-shell page-stack">
     <div class="detail-layout">
       <article class="detail-main">
-        <img class="detail-banner" :src="gameStore.currentGame.bannerUrl" :alt="gameStore.currentGame.title" />
-        <p class="eyebrow">Game Detail</p>
-        <h1>{{ gameStore.currentGame.title }}</h1>
-        <p class="lead">{{ gameStore.currentGame.shortDescription }}</p>
+        <img class="detail-banner" :src="gameStore.currentGame.bannerUrl" :alt="localizedGame?.title" />
+        <p class="eyebrow">{{ copy.gameDetail }}</p>
+        <h1>{{ localizedGame?.title }}</h1>
+        <p class="lead">{{ localizedGame?.shortDescription }}</p>
         <div class="chip-row">
           <span v-for="tag in gameStore.currentGame.tags" :key="tag" class="soft-chip">{{ tag }}</span>
         </div>
         <div class="metric-strip">
           <article>
             <strong>{{ formatCompact(gameStore.currentGame.playCount) }}</strong>
-            <span>플레이 수</span>
+            <span>{{ copy.plays }}</span>
           </article>
           <article>
             <strong>{{ formatScore(gameStore.currentGame.bestScore) }}</strong>
-            <span>전체 최고점</span>
+            <span>{{ copy.bestScore }}</span>
           </article>
           <article>
-            <strong>{{ gameStore.currentGame.averageSessionSeconds }}초</strong>
-            <span>평균 세션</span>
+            <strong>{{ gameStore.currentGame.averageSessionSeconds }}{{ copy.seconds }}</strong>
+            <span>{{ copy.averageSession }}</span>
           </article>
         </div>
         <div class="hero-actions">
-          <RouterLink class="pill-button" :to="`/games/${gameStore.currentGame.slug}/play`">지금 플레이</RouterLink>
-          <RouterLink class="pill-button quiet" :to="`/games/${gameStore.currentGame.slug}/ranking`">랭킹 보기</RouterLink>
+          <RouterLink class="pill-button" :to="`/games/${gameStore.currentGame.slug}/play`">{{ copy.playNow }}</RouterLink>
+          <RouterLink class="pill-button quiet" :to="`/games/${gameStore.currentGame.slug}/ranking`">{{ copy.ranking }}</RouterLink>
         </div>
       </article>
 
@@ -68,7 +88,7 @@ watch(() => route.params.slug, () => {
         <AdSlot page="game-detail" position="right-rail" :game-slug="gameStore.currentGame.slug" />
         <article class="info-panel">
           <p class="eyebrow">Today Top 5</p>
-          <h2>오늘의 랭킹</h2>
+          <h2>{{ copy.todaysRanking }}</h2>
           <LeaderboardTable :items="rankingStore.ranking?.items.slice(0, 5) ?? []" />
         </article>
       </aside>
@@ -76,12 +96,12 @@ watch(() => route.params.slug, () => {
 
     <section class="info-panel">
       <p class="eyebrow">How to play</p>
-      <h2>게임 방법</h2>
-      <p>{{ gameStore.currentGame.description }}</p>
+      <h2>{{ copy.howToPlay }}</h2>
+      <p>{{ localizedGame?.description }}</p>
       <ul class="plain-list">
-        <li>조작 입력: {{ gameStore.currentGame.inputs.join(', ') }}</li>
-        <li>점수 모드: {{ gameStore.currentGame.modes.join(', ') }}</li>
-        <li>랭킹 기준: {{ gameStore.currentGame.scoreOrder === 'higher_better' ? '높은 점수 우선' : '낮은 점수 우선' }}</li>
+        <li>{{ copy.controls }}: {{ gameStore.currentGame.inputs.map((input) => getLocalizedInputLabel(input)).join(', ') }}</li>
+        <li>{{ copy.scoreMode }}: {{ gameStore.currentGame.modes.map((mode) => getLocalizedModeLabel(mode)).join(', ') }}</li>
+        <li>{{ copy.rankingRule }}: {{ gameStore.currentGame.scoreOrder === 'higher_better' ? copy.higherBetter : copy.lowerBetter }}</li>
       </ul>
     </section>
 
@@ -91,7 +111,7 @@ watch(() => route.params.slug, () => {
       <div class="section-heading">
         <div>
           <p class="eyebrow">Related Games</p>
-          <h2>같이 보면 좋은 게임</h2>
+          <h2>{{ copy.related }}</h2>
         </div>
       </div>
       <GameGrid :games="gameStore.relatedGames" />

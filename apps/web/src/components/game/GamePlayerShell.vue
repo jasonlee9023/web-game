@@ -10,6 +10,8 @@ import { trackEvent } from '@/api/events.api';
 import AdSlot from '@/components/ads/AdSlot.vue';
 import GameIframe from '@/components/game/GameIframe.vue';
 import GameOverModal from '@/components/game/GameOverModal.vue';
+import { currentLanguage } from '@/i18n/language';
+import { getLocalizedGameCopy, getLocalizedInputLabel, getLocalizedModeLabel } from '@/i18n/game-copy';
 import { useAuthStore } from '@/stores/auth.store';
 import { usePlaySessionStore } from '@/stores/play-session.store';
 import { useRankingStore } from '@/stores/ranking.store';
@@ -78,6 +80,34 @@ const hostedRoomId = ref<string | null>(readHostedRoomId(props.game.slug));
 const inviteJoinRequested = ref(false);
 const lastJoinCommandKey = ref('');
 
+const localizedGame = computed(() => getLocalizedGameCopy(props.game));
+const localizedInputs = computed(() => props.game.inputs.map((input) => getLocalizedInputLabel(input)).join(', '));
+const localizedModes = computed(() => props.game.modes.map((mode) => getLocalizedModeLabel(mode)).join(', '));
+const copy = computed(() => ({
+  controls: currentLanguage.value === 'en' ? 'Controls' : '조작',
+  modes: currentLanguage.value === 'en' ? 'Modes' : '모드',
+  myBest: currentLanguage.value === 'en' ? 'My Best' : '내 최고점',
+  ready: currentLanguage.value === 'en' ? 'Game Ready' : '게임 준비 완료',
+  loading: currentLanguage.value === 'en' ? 'Loading Game...' : '게임 로딩 중...',
+  showInfo: currentLanguage.value === 'en' ? 'Show Info' : '정보 보기',
+  focus: currentLanguage.value === 'en' ? 'Focus View' : '집중 보기',
+  exitFullscreen: currentLanguage.value === 'en' ? 'Exit Fullscreen' : '전체화면 종료',
+  browserFullscreen: currentLanguage.value === 'en' ? 'Browser Fullscreen' : '브라우저 전체화면',
+  ranking: currentLanguage.value === 'en' ? 'Rankings' : '랭킹',
+  backToDetail: currentLanguage.value === 'en' ? 'Back to Details' : '상세로 돌아가기',
+  inviteTitle: currentLanguage.value === 'en' ? 'Online match invite received.' : '온라인 매치 초대가 도착했습니다.',
+  inviteDescription:
+    currentLanguage.value === 'en'
+      ? 'Join the shared room with this button. The match starts as soon as the peer connection is ready.'
+      : '버튼을 누르면 공유 받은 방에 참가하고, 연결이 성립되면 바로 매치가 시작됩니다.',
+  join: currentLanguage.value === 'en' ? 'Join' : '참가하기',
+  requestingJoin: currentLanguage.value === 'en' ? 'Requesting...' : '참가 요청 중...',
+  preparingJoin: currentLanguage.value === 'en' ? 'Preparing...' : '입장 준비 중...',
+  todaysPosition: currentLanguage.value === 'en' ? 'Today’s Position' : '오늘의 내 위치',
+  rankingPending: currentLanguage.value === 'en' ? 'Calculated after play.' : '플레이 후 계산됩니다.',
+  fullRanking: currentLanguage.value === 'en' ? 'View All Rankings' : '전체 랭킹 보기',
+  rankSuffix: currentLanguage.value === 'en' ? '#' : '위',
+}));
 const playOrigin = computed(() => new URL(props.game.entryUrl).origin);
 const browserFullscreenSupported = computed(() => typeof document !== 'undefined' && 'fullscreenEnabled' in document);
 const inviteRoomId = computed(() => normalizeRoomQuery(route.query.room));
@@ -96,10 +126,10 @@ const invitePromptVisible = computed(
 );
 const inviteJoinButtonLabel = computed(() => {
   if (!inviteJoinRequested.value) {
-    return '참가하기';
+    return copy.value.join;
   }
 
-  return gameReady.value ? '참가 요청 중...' : '입장 준비 중...';
+  return gameReady.value ? copy.value.requestingJoin : copy.value.preparingJoin;
 });
 const layoutClass = computed(() => ({
   'is-portrait': props.game.orientation === 'portrait',
@@ -424,12 +454,12 @@ onBeforeUnmount(() => {
     <aside class="play-side">
       <article class="info-panel sticky-panel">
         <p class="eyebrow">Play Brief</p>
-        <h1>{{ game.title }}</h1>
-        <p>{{ game.shortDescription }}</p>
+        <h1>{{ localizedGame.title }}</h1>
+        <p>{{ localizedGame.shortDescription }}</p>
         <ul class="plain-list">
-          <li>조작: {{ game.inputs.join(', ') }}</li>
-          <li>모드: {{ game.modes.join(', ') }}</li>
-          <li>내 최고점: {{ formatScore(playSessionStore.myBest?.score ?? 0) }}</li>
+          <li>{{ copy.controls }}: {{ localizedInputs }}</li>
+          <li>{{ copy.modes }}: {{ localizedModes }}</li>
+          <li>{{ copy.myBest }}: {{ formatScore(playSessionStore.myBest?.score ?? 0) }}</li>
         </ul>
       </article>
     </aside>
@@ -439,27 +469,27 @@ onBeforeUnmount(() => {
         <div class="play-stage-header">
           <div class="play-stage-copy">
             <span class="eyebrow">iframe runtime</span>
-            <strong>{{ gameReady ? '게임 준비 완료' : '게임 로딩 중...' }}</strong>
+            <strong>{{ gameReady ? copy.ready : copy.loading }}</strong>
           </div>
           <div class="play-stage-actions">
             <button class="pill-button quiet" @click="toggleFocusMode">
-              {{ focusMode ? '정보 보기' : '집중 보기' }}
+              {{ focusMode ? copy.showInfo : copy.focus }}
             </button>
             <button
               v-if="browserFullscreenSupported"
               class="pill-button quiet"
               @click="toggleBrowserFullscreen"
             >
-              {{ browserFullscreenActive ? '전체화면 종료' : '브라우저 전체화면' }}
+              {{ browserFullscreenActive ? copy.exitFullscreen : copy.browserFullscreen }}
             </button>
-            <RouterLink class="text-link" :to="`/games/${game.slug}/ranking`">랭킹</RouterLink>
-            <RouterLink class="text-link" :to="`/games/${game.slug}`">상세로 돌아가기</RouterLink>
+            <RouterLink class="text-link" :to="`/games/${game.slug}/ranking`">{{ copy.ranking }}</RouterLink>
+            <RouterLink class="text-link" :to="`/games/${game.slug}`">{{ copy.backToDetail }}</RouterLink>
           </div>
         </div>
         <article v-if="invitePromptVisible" class="info-panel">
           <p class="eyebrow">Invite</p>
-          <h2>온라인 매치 초대가 도착했습니다.</h2>
-          <p>버튼을 누르면 공유 받은 방에 참가하고, 연결이 성립되면 바로 매치가 시작됩니다.</p>
+          <h2>{{ copy.inviteTitle }}</h2>
+          <p>{{ copy.inviteDescription }}</p>
           <button class="pill-button" :disabled="inviteJoinRequested" @click="requestInviteJoin">
             {{ inviteJoinButtonLabel }}
           </button>
@@ -469,7 +499,7 @@ onBeforeUnmount(() => {
           ref="iframeRef"
           :frame-key="playSessionStore.iframeKey"
           :src="game.entryUrl"
-          :title="game.title"
+          :title="localizedGame.title"
           :aspect-ratio="game.aspectRatio"
           :fit-viewport="focusMode"
         />
@@ -485,8 +515,8 @@ onBeforeUnmount(() => {
           class="feature-link"
           :to="`/games/${related.slug}`"
         >
-          <span>{{ related.title }}</span>
-          <small>{{ related.shortDescription }}</small>
+          <span>{{ getLocalizedGameCopy(related).title }}</span>
+          <small>{{ getLocalizedGameCopy(related).shortDescription }}</small>
         </RouterLink>
       </div>
     </div>
@@ -495,9 +525,9 @@ onBeforeUnmount(() => {
       <AdSlot page="game-play" position="right-rail" :game-slug="game.slug" />
       <article class="info-panel">
         <p class="eyebrow">Ranking snapshot</p>
-        <h2>오늘의 내 위치</h2>
-        <p>{{ latestRank ? `${latestRank}위` : '플레이 후 계산됩니다.' }}</p>
-        <RouterLink class="text-link" :to="`/games/${game.slug}/ranking`">전체 랭킹 보기</RouterLink>
+        <h2>{{ copy.todaysPosition }}</h2>
+        <p>{{ latestRank ? (currentLanguage === 'en' ? `${copy.rankSuffix}${latestRank}` : `${latestRank}${copy.rankSuffix}`) : copy.rankingPending }}</p>
+        <RouterLink class="text-link" :to="`/games/${game.slug}/ranking`">{{ copy.fullRanking }}</RouterLink>
       </article>
     </aside>
 

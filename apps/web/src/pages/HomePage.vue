@@ -3,6 +3,8 @@ import { computed, onMounted } from 'vue';
 
 import AdSlot from '@/components/ads/AdSlot.vue';
 import GameGrid from '@/components/game/GameGrid.vue';
+import { currentLanguage } from '@/i18n/language';
+import { getLocalizedGameCopy } from '@/i18n/game-copy';
 import LeaderboardTable from '@/components/ranking/LeaderboardTable.vue';
 import { useGameStore } from '@/stores/game.store';
 import { useRankingStore } from '@/stores/ranking.store';
@@ -16,12 +18,32 @@ const dailyTop = computed(() =>
 );
 const heroGame = computed(() => gameStore.games.find((game) => game.slug === 'hero-journey') ?? gameStore.featuredGames[0] ?? gameStore.games[0]);
 const heroImageUrl = computed(() => heroGame.value?.thumbnailUrl ?? heroGame.value?.bannerUrl);
+const localizedHeroGame = computed(() => (heroGame.value ? getLocalizedGameCopy(heroGame.value) : null));
 const recommendationGames = computed(() => {
   const featured = gameStore.featuredGames.filter((game) => game.slug !== heroGame.value?.slug).slice(0, 3);
   return featured.length ? featured : gameStore.games.filter((game) => game.slug !== heroGame.value?.slug).slice(0, 3);
 });
 const firstGridGames = computed(() => gameStore.games.slice(0, 4));
 const remainingGames = computed(() => gameStore.games.slice(4));
+const copy = computed(() => ({
+  headline: currentLanguage.value === 'en' ? 'Pick a Game and Chase the Rankings' : '한 판 고르고 바로 랭킹 경쟁',
+  lead:
+    currentLanguage.value === 'en'
+      ? 'Play a quick round and find your next score chase from today’s leaderboard.'
+      : '짧게 플레이하고, 오늘 점수판에서 다시 도전할 게임을 빠르게 찾으세요.',
+  findGames: currentLanguage.value === 'en' ? 'Find Games' : '게임 찾기',
+  viewRankings: currentLanguage.value === 'en' ? 'View Rankings' : '랭킹 보기',
+  games: currentLanguage.value === 'en' ? 'Games' : '게임',
+  todayRecords: currentLanguage.value === 'en' ? 'Today Records' : '오늘 기록',
+  recommendedSession: currentLanguage.value === 'en' ? 'Recommended Session' : '추천 세션',
+  seconds: currentLanguage.value === 'en' ? 'sec' : '초',
+  playNow: currentLanguage.value === 'en' ? 'Play Now' : '바로 플레이',
+  queue: currentLanguage.value === 'en' ? 'Recommended Queue' : '추천 큐',
+  all: currentLanguage.value === 'en' ? 'All' : '전체',
+  todayGames: currentLanguage.value === 'en' ? 'Games to Play Today' : '오늘 플레이할 게임',
+  dailyTop: currentLanguage.value === 'en' ? 'Today’s High Scores' : '오늘 가장 높은 점수',
+  recent: currentLanguage.value === 'en' ? 'Recently Played' : '최근 플레이한 게임',
+}));
 
 onMounted(async () => {
   applySeo({
@@ -38,35 +60,35 @@ onMounted(async () => {
       <div class="content-shell home-spotlight-inner">
         <div class="spotlight-copy">
           <p class="eyebrow">Today pick</p>
-          <h1>한 판 고르고 바로 랭킹 경쟁</h1>
-          <p class="lead">짧게 플레이하고, 오늘 점수판에서 다시 도전할 게임을 빠르게 찾으세요.</p>
+          <h1>{{ copy.headline }}</h1>
+          <p class="lead">{{ copy.lead }}</p>
           <div class="hero-actions">
-            <RouterLink class="pill-button" to="/games">게임 찾기</RouterLink>
-            <RouterLink class="pill-button quiet" to="/rankings">랭킹 보기</RouterLink>
+            <RouterLink class="pill-button" to="/games">{{ copy.findGames }}</RouterLink>
+            <RouterLink class="pill-button quiet" to="/rankings">{{ copy.viewRankings }}</RouterLink>
           </div>
           <div class="spotlight-stats">
             <article>
               <strong>{{ gameStore.games.length }}</strong>
-              <span>게임</span>
+              <span>{{ copy.games }}</span>
             </article>
             <article>
               <strong>{{ dailyTop.length }}</strong>
-              <span>오늘 기록</span>
+              <span>{{ copy.todayRecords }}</span>
             </article>
             <article>
-              <strong>{{ heroGame ? `${heroGame.averageSessionSeconds}초` : '-' }}</strong>
-              <span>추천 세션</span>
+              <strong>{{ heroGame ? `${heroGame.averageSessionSeconds}${copy.seconds}` : '-' }}</strong>
+              <span>{{ copy.recommendedSession }}</span>
             </article>
           </div>
         </div>
 
         <RouterLink v-if="heroGame" class="spotlight-preview" :to="`/games/${heroGame.slug}/play`">
-          <img :src="heroImageUrl" :alt="heroGame.title" />
+          <img :src="heroImageUrl" :alt="localizedHeroGame?.title" />
           <div class="spotlight-preview-body">
             <span class="game-card-category">{{ heroGame.categories[0] }}</span>
-            <h2>{{ heroGame.title }}</h2>
-            <p>{{ heroGame.shortDescription }}</p>
-            <span class="spotlight-play">바로 플레이</span>
+            <h2>{{ localizedHeroGame?.title }}</h2>
+            <p>{{ localizedHeroGame?.shortDescription }}</p>
+            <span class="spotlight-play">{{ copy.playNow }}</span>
           </div>
         </RouterLink>
       </div>
@@ -78,9 +100,9 @@ onMounted(async () => {
         <div class="section-heading tight">
           <div>
             <p class="eyebrow">Queue</p>
-            <h2>추천 큐</h2>
+            <h2>{{ copy.queue }}</h2>
           </div>
-          <RouterLink class="text-link" to="/games">전체</RouterLink>
+          <RouterLink class="text-link" to="/games">{{ copy.all }}</RouterLink>
         </div>
         <div class="feature-list">
           <RouterLink
@@ -89,8 +111,8 @@ onMounted(async () => {
             class="feature-link"
             :to="`/games/${game.slug}`"
           >
-            <span>{{ game.title }}</span>
-            <small>{{ game.shortDescription }}</small>
+            <span>{{ getLocalizedGameCopy(game).title }}</span>
+            <small>{{ getLocalizedGameCopy(game).shortDescription }}</small>
           </RouterLink>
         </div>
       </section>
@@ -100,7 +122,7 @@ onMounted(async () => {
       <div class="section-heading">
         <div>
           <p class="eyebrow">Catalog</p>
-          <h2>오늘 플레이할 게임</h2>
+          <h2>{{ copy.todayGames }}</h2>
         </div>
         <div class="chip-row">
           <span v-for="category in gameStore.categories" :key="category" class="soft-chip">{{ category }}</span>
@@ -114,12 +136,12 @@ onMounted(async () => {
     <section class="content-shell two-column-panel">
       <article class="info-panel">
         <p class="eyebrow">Daily top 10</p>
-        <h2>오늘 가장 높은 점수</h2>
+        <h2>{{ copy.dailyTop }}</h2>
         <LeaderboardTable :items="dailyTop" />
       </article>
       <article class="info-panel">
         <p class="eyebrow">Recent activity</p>
-        <h2>최근 플레이한 게임</h2>
+        <h2>{{ copy.recent }}</h2>
         <div class="feature-list">
           <RouterLink
             v-for="game in gameStore.recentGames.length ? gameStore.recentGames : gameStore.games.slice(0, 3)"
@@ -127,7 +149,7 @@ onMounted(async () => {
             class="feature-link"
             :to="`/games/${game.slug}`"
           >
-            <span>{{ game.title }}</span>
+            <span>{{ getLocalizedGameCopy(game).title }}</span>
             <small>{{ game.tags.join(' · ') }}</small>
           </RouterLink>
         </div>

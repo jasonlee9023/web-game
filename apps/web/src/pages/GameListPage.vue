@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router';
 
 import AdSlot from '@/components/ads/AdSlot.vue';
 import GameGrid from '@/components/game/GameGrid.vue';
+import { currentLanguage } from '@/i18n/language';
 import { useGameStore } from '@/stores/game.store';
 import { applySeo } from '@/utils/seo';
 
@@ -12,6 +13,14 @@ const gameStore = useGameStore();
 
 const search = computed(() => route.query.search?.toString());
 const category = computed(() => route.query.category?.toString());
+const copy = computed(() => ({
+  title: currentLanguage.value === 'en' ? 'Game Catalog' : '게임 목록',
+  description:
+    currentLanguage.value === 'en'
+      ? 'Browse ready-to-play Canvas and WebGL games by category and search keyword.'
+      : '카테고리 필터와 검색어를 기준으로 바로 플레이 가능한 Canvas/WebGL 게임을 탐색합니다.',
+  all: currentLanguage.value === 'en' ? 'All' : '전체',
+}));
 
 async function load() {
   await gameStore.loadGames({
@@ -37,12 +46,12 @@ watch([search, category], () => {
   <section class="content-shell page-stack">
     <header class="page-hero compact">
       <p class="eyebrow">Game Catalog</p>
-      <h1>게임 목록</h1>
-      <p>카테고리 필터와 검색어를 기준으로 바로 플레이 가능한 Canvas/WebGL 게임을 탐색합니다.</p>
+      <h1>{{ copy.title }}</h1>
+      <p>{{ copy.description }}</p>
     </header>
 
     <div class="chip-row">
-      <RouterLink class="soft-chip" to="/games">전체</RouterLink>
+      <RouterLink class="soft-chip" to="/games">{{ copy.all }}</RouterLink>
       <RouterLink v-for="item in gameStore.categories" :key="item" class="soft-chip" :to="`/games?category=${item}`">
         {{ item }}
       </RouterLink>
