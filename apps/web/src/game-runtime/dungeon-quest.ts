@@ -214,6 +214,13 @@ type CircleObstacle = {
   radius: number;
 };
 
+type RectObstacle = {
+  x: number;
+  z: number;
+  halfWidth: number;
+  halfDepth: number;
+};
+
 type CoinPickup = {
   mesh: THREE.Group;
   collected: boolean;
@@ -659,6 +666,7 @@ const MAP_TOOL_LABELS: Record<MapTool, string> = {
 };
 const DUNGEON_LEVELS = createDungeonLevels();
 const DEFAULT_MAP_CONFIG = cloneMapConfig(DUNGEON_LEVELS[0]?.map ?? createDefaultMapConfig());
+const DUEL_MAP_CONFIG = cloneMapConfig(DEFAULT_MAP_CONFIG);
 const ROOM_BOUNDS = {
   minX: -10.4,
   maxX: 10.4,
@@ -780,6 +788,7 @@ const virtualJoystickState = {
 };
 
 const obstacles: CircleObstacle[] = [];
+const wallObstacles: RectObstacle[] = [];
 const effects: EffectPulse[] = [];
 const magicProjectiles: MagicProjectile[] = [];
 const coins: CoinPickup[] = [];
@@ -1887,14 +1896,14 @@ function fromNetVector3(vector: NetVector3) {
 function getDuelSpawnPosition(role: P2PRole) {
   if (role === 'guest') {
     return {
-      position: new THREE.Vector3(2.7, 0, 3.7),
-      rotationY: Math.PI,
+      position: new THREE.Vector3(3.2, 0, -8.2),
+      rotationY: 0,
     };
   }
 
   return {
-    position: new THREE.Vector3(-2.7, 0, -3.7),
-    rotationY: 0,
+    position: new THREE.Vector3(-3.2, 0, 8.2),
+    rotationY: Math.PI,
   };
 }
 
@@ -2275,7 +2284,9 @@ function handleP2pMessage(message: P2PMessage) {
         return;
       }
 
-      remotePeerAvatar.targetPosition.copy(fromNetVector3(message.payload.position));
+      const targetPosition = fromNetVector3(message.payload.position);
+      applyObstacleCollisions(targetPosition, PLAYER_RADIUS);
+      remotePeerAvatar.targetPosition.copy(targetPosition);
       remotePeerAvatar.targetRotationY = message.payload.rotationY;
       remotePeerAvatar.moveSpeed = message.payload.moveSpeed;
       remotePeerAvatar.health = message.payload.health;
@@ -3798,27 +3809,101 @@ function clampToRoom(position: THREE.Vector3, radius: number) {
   position.z = THREE.MathUtils.clamp(position.z, minZ + radius, ROOM_BOUNDS.maxZ - radius);
 }
 
-function applyObstacleCollisions(position: THREE.Vector3, radius: number, skip?: CircleObstacle) {
-  for (const obstacle of obstacles) {
-    if (skip && obstacle === skip) {
-      continue;
-    }
+function pushOutOfRectObstacle(position: THREE.Vector3, radius: number, obstacle: RectObstacle) {
+  const minX = obstacle.x - obstacle.halfWidth;
+  const maxX = obstacle.x + obstacle.halfWidth;
+  const minZ = obstacle.z - obstacle.halfDepth;
+  const maxZ = obstacle.z + obstacle.halfDepth;
+  const closestX = THREE.MathUtils.clamp(position.x, minX, maxX);
+  const closestZ = THREE.MathUtils.clamp(position.z, minZ, maxZ);
+  const dx = position.x - closestX;
+  const dz = position.z - closestZ;
+  const distanceSq = dx * dx + dz * dz;
 
-    const dx = position.x - obstacle.x;
-    const dz = position.z - obstacle.z;
-    const distance = Math.hypot(dx, dz) || 0.0001;
-    const minimum = obstacle.radius + radius;
+  if (distanceSq > radius * radius) {
+    return;
+  }
 
-    if (distance >= minimum) {
-      continue;
-    }
-
-    const push = (minimum - distance) / distance;
+  if (distanceSq > 0.000001) {
+    const distance = Math.sqrt(distanceSq);
+    const push = (radius - distance) / distance;
     position.x += dx * push;
     position.z += dz * push;
+    return;
+  }
+
+  const distances = [
+    { axis: 'x' as const, direction: -1, value: Math.abs(position.x - minX) },
+    { axis: 'x' as const, direction: 1, value: Math.abs(maxX - position.x) },
+    { axis: 'z' as const, direction: -1, value: Math.abs(position.z - minZ) },
+    { axis: 'z' as const, direction: 1, value: Math.abs(maxZ - position.z) },
+  ].sort((left, right) => left.value - right.value);
+  const nearest = distances[0];
+  if (!nearest) {
+    return;
+  }
+
+  if (nearest.axis === 'x') {
+    position.x = nearest.direction < 0 ? minX - radius : maxX + radius;
+    return;
+  }
+
+  position.z = nearest.direction < 0 ? minZ - radius : maxZ + radius;
+}
+
+function applyObstacleCollisions(position: THREE.Vector3, radius: number, skip?: CircleObstacle) {
+  for (let pass = 0; pass < 2; pass += 1) {
+    for (const obstacle of obstacles) {
+      if (skip && obstacle === skip) {
+        continue;
+      }
+
+      const dx = position.x - obstacle.x;
+      const dz = position.z - obstacle.z;
+      const distance = Math.hypot(dx, dz) || 0.0001;
+      const minimum = obstacle.radius + radius;
+
+      if (distance >= minimum) {
+        continue;
+      }
+
+      const push = (minimum - distance) / distance;
+      position.x += dx * push;
+      position.z += dz * push;
+    }
+
+    for (const obstacle of wallObstacles) {
+      pushOutOfRectObstacle(position, radius, obstacle);
+    }
   }
 
   clampToRoom(position, radius);
+}
+
+function isBlockedByRectObstacle(position: THREE.Vector3, radius: number, obstacle: RectObstacle) {
+  const closestX = THREE.MathUtils.clamp(position.x, obstacle.x - obstacle.halfWidth, obstacle.x + obstacle.halfWidth);
+  const closestZ = THREE.MathUtils.clamp(position.z, obstacle.z - obstacle.halfDepth, obstacle.z + obstacle.halfDepth);
+  const dx = position.x - closestX;
+  const dz = position.z - closestZ;
+  return dx * dx + dz * dz <= radius * radius;
+}
+
+function isBlockedByObstacle(position: THREE.Vector3, radius: number) {
+  for (const obstacle of obstacles) {
+    const dx = position.x - obstacle.x;
+    const dz = position.z - obstacle.z;
+    if (dx * dx + dz * dz <= (obstacle.radius + radius) * (obstacle.radius + radius)) {
+      return true;
+    }
+  }
+
+  for (const obstacle of wallObstacles) {
+    if (isBlockedByRectObstacle(position, radius, obstacle)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function spawnEffect(position: THREE.Vector3, color: string) {
@@ -3892,6 +3977,22 @@ function spawnMagicProjectile(direction: THREE.Vector3, owner: MagicProjectileOw
 
 function addCircularObstacle(x: number, z: number, radius: number) {
   obstacles.push({ x, z, radius });
+}
+
+function addWallObstacle(wall: WallSegmentConfig) {
+  if (wall.opening) {
+    return;
+  }
+
+  const vertical = THREE.MathUtils.euclideanModulo(wall.rotationQuarter, 2) === 1;
+  const halfLength = wall.half ? 0.48 : 0.56;
+  const halfThickness = wall.narrow ? 0.16 : wall.half ? 0.18 : 0.22;
+  wallObstacles.push({
+    x: wall.x,
+    z: wall.z,
+    halfWidth: vertical ? halfThickness : halfLength,
+    halfDepth: vertical ? halfLength : halfThickness,
+  });
 }
 
 function addFloorTile(world: THREE.Group, x: number, z: number, detail = false) {
@@ -4239,6 +4340,7 @@ function applyMapToolAtPoint(point: THREE.Vector3, erase = false) {
 function buildEnvironment() {
   const world = new THREE.Group();
   obstacles.length = 0;
+  wallObstacles.length = 0;
   coins.length = 0;
   enemies.length = 0;
   const isDuelMode = gameMode === 'duel';
@@ -4291,19 +4393,7 @@ function buildEnvironment() {
   }
 
   for (const wall of dungeonMapConfig.walls) {
-    if (wall.opening) {
-      continue;
-    }
-    const vertical = THREE.MathUtils.euclideanModulo(wall.rotationQuarter, 2) === 1;
-    const offsets = wall.half ? [0] : [-0.34, 0, 0.34];
-    const radius = wall.half ? 0.24 : wall.narrow ? 0.18 : 0.22;
-    for (const offset of offsets) {
-      addCircularObstacle(
-        vertical ? wall.x : wall.x + offset,
-        vertical ? wall.z + offset : wall.z,
-        radius,
-      );
-    }
+    addWallObstacle(wall);
   }
 
   if (!isDuelMode) {
@@ -4364,6 +4454,7 @@ function buildEnvironment() {
   const playerWeapon = cloneTemplate('weapon-sword');
   const playerAnimations = getTemplateAnimations('character-human');
   player.position.copy(isDuelMode ? getDuelSpawnPosition(p2pState.role).position : getMapPointVector(dungeonMapConfig.playerSpawn));
+  applyObstacleCollisions(player.position, PLAYER_RADIUS);
   if (isDuelMode) {
     player.rotation.y = getDuelSpawnPosition(p2pState.role).rotationY;
   }
@@ -4472,6 +4563,7 @@ function ensureRemotePeerAvatar() {
   const animations = getTemplateAnimations('character-human');
   const spawn = getRemoteSpawnPosition(p2pState.role);
   mesh.position.copy(spawn.position);
+  applyObstacleCollisions(mesh.position, PLAYER_RADIUS);
   mesh.rotation.y = spawn.rotationY;
   const weaponMount = attachWeaponToRightArm(mesh, weapon);
   const rig = createCharacterRig(mesh, weaponMount, weapon, animations);
@@ -4495,7 +4587,7 @@ function ensureRemotePeerAvatar() {
     weapon,
     rig,
     marker,
-    targetPosition: spawn.position.clone(),
+    targetPosition: mesh.position.clone(),
     targetRotationY: spawn.rotationY,
     moveSpeed: 0,
     health: 100,
@@ -4509,7 +4601,8 @@ function ensureRemotePeerAvatar() {
 
 function startDuelMode() {
   gameMode = 'duel';
-  resetState();
+  dungeonMapConfig = cloneMapConfig(DUEL_MAP_CONFIG);
+  resetState({ preserveMap: true });
   createSceneAssets();
   state.started = true;
   state.running = true;
@@ -4521,6 +4614,9 @@ function startDuelMode() {
   state.mana = state.maxMana;
   state.score = 0;
   sceneAssets?.player.position.copy(getDuelSpawnPosition(p2pState.role).position);
+  if (sceneAssets) {
+    applyObstacleCollisions(sceneAssets.player.position, PLAYER_RADIUS);
+  }
   if (sceneAssets) {
     sceneAssets.player.rotation.y = getDuelSpawnPosition(p2pState.role).rotationY;
     sceneAssets.playerRig.moveSpeed = 0;
@@ -5219,8 +5315,16 @@ function moveCharacterWithCollision(
   deltaSeconds: number,
   radius: number,
 ) {
-  const next = current.clone().addScaledVector(desiredDirection, speed * deltaSeconds);
-  applyObstacleCollisions(next, radius);
+  const next = current.clone();
+  const distance = Math.max(0, speed * deltaSeconds);
+  const steps = Math.max(1, Math.ceil(distance / 0.18));
+  const stepDistance = distance / steps;
+
+  for (let step = 0; step < steps; step += 1) {
+    next.addScaledVector(desiredDirection, stepDistance);
+    applyObstacleCollisions(next, radius);
+  }
+
   return next;
 }
 
@@ -5515,10 +5619,7 @@ function updateMagic(deltaMs: number) {
         position.z < ROOM_BOUNDS.minZOpen - 0.4 ||
         position.z > ROOM_BOUNDS.maxZ + 0.4;
 
-      const blockedByObstacle = obstacles.some((obstacle) => {
-        const distance = Math.hypot(position.x - obstacle.x, position.z - obstacle.z);
-        return distance <= obstacle.radius + projectile.radius * 0.72;
-      });
+      const blockedByObstacle = isBlockedByObstacle(position, projectile.radius * 0.72);
 
       consumed = blockedByRoom || blockedByObstacle;
     }
