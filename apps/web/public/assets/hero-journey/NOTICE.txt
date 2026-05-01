@@ -1,0 +1,30 @@
+Hero Journey biome asset bundle
+
+Source folders provided locally by the project owner:
+- /Users/jongminlee/Downloads/ForestPack
+- /Users/jongminlee/Downloads/사막&산
+
+Imported files:
+- biomes/forest-pack.fbx
+- biomes/tree-1.fbx
+- biomes/tree-2.fbx
+- biomes/tree-3.fbx
+- biomes/bush-1.fbx
+- biomes/bush-2.fbx
+- biomes/bush-3.fbx
+- biomes/grass-1.fbx
+- biomes/grass-2.fbx
+- biomes/plant-1.fbx
+- biomes/plant-4.fbx
+- biomes/plant-5.fbx
+- biomes/rock-1.fbx
+- biomes/rock-3.fbx
+- biomes/rock-6.fbx
+- biomes/mountain-1.fbx
+- biomes/mountain-2.fbx
+- biomes/mountain-3.fbx
+- biomes/terrain-1.fbx
+- biomes/terrain-2.fbx
+
+No license or attribution file was present in those local folders at import time.
+Keep the original purchase/download record with the project before external redistribution.

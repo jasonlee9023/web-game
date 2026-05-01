@@ -37,6 +37,14 @@ export const router = createRouter({
 });
 
 router.beforeEach(async (to) => {
+  if (to.path.startsWith('/games/dungeon-quest')) {
+    return {
+      path: to.path.replace('/games/dungeon-quest', '/games/hero-journey'),
+      query: to.query,
+      hash: to.hash,
+    };
+  }
+
   const authStore = useAuthStore(pinia);
   await authStore.initialize();
 
@@ -50,4 +58,3 @@ router.beforeEach(async (to) => {
 
   return true;
 });
-

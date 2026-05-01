@@ -465,15 +465,15 @@ export const seedGames: GameEntity[] = [
   },
   {
     id: randomUUID(),
-    slug: 'dungeon-quest',
-    title: 'Dungeon Quest',
-    shortDescription: '4개 층과 다양한 오크 몹이 이어지는 저폴리 던전 액션 RPG',
+    slug: 'hero-journey',
+    title: '용사의 여정',
+    shortDescription: '숲, 사막 협곡, 산길, 성소를 넘나드는 저폴리 액션 RPG',
     description:
-      'Dungeon Quest는 Kenney Mini Dungeon CC0 에셋으로 만든 다층 던전 액션 RPG입니다. 입구 회랑, 무너진 채석장, 오래된 금고, 오크 대장 방을 차례로 돌파하며 정찰병, 창병, 방패병, 대장 몹을 상대하고 각 층의 보물상자를 열어 다음 게이트로 이동합니다.',
-    thumbnailUrl: `${env.webOrigin}/assets/dungeon-quest/screenshot.png`,
-    bannerUrl: `${env.webOrigin}/assets/dungeon-quest/sample.png`,
-    entryUrl: `${env.webOrigin}/games/dungeon-quest/index.html`,
-    version: '1.1.0',
+      '용사의 여정은 저폴리 캐릭터와 환경 에셋을 활용한 모험 액션 RPG입니다. 숲의 들머리, 사막 협곡, 바람산 고갯길, 잊힌 성소를 차례로 돌파하며 수호자를 상대하고 보물상자를 열어 다음 여정으로 이동합니다.',
+    thumbnailUrl: `${env.webOrigin}/assets/hero-journey/screenshot.png`,
+    bannerUrl: `${env.webOrigin}/assets/hero-journey/sample.png`,
+    entryUrl: `${env.webOrigin}/games/hero-journey/index.html`,
+    version: '1.2.0',
     engineType: 'webgl',
     orientation: 'landscape',
     aspectRatio: '16:10',
@@ -481,7 +481,7 @@ export const seedGames: GameEntity[] = [
     status: 'published',
     scoreOrder: 'higher_better',
     categories: ['RPG', '어드벤처'],
-    tags: ['저폴리', '던전', '퀘스트'],
+    tags: ['저폴리', '모험', '퀘스트'],
     modes: ['normal'],
     featured: true,
     playCount: 6120,
@@ -550,8 +550,8 @@ export const seedScores: ScoreRecord[] = [
   createSeedScore('frogger', 12740, 8, 'normal', { userId: seedUsers[1]?.id }),
   createSeedScore('pong-duel', 10680, 4, 'normal', { guestId: 'guest-pong-1' }),
   createSeedScore('pong-duel', 10120, 9, 'normal', { userId: seedUsers[1]?.id }),
-  createSeedScore('dungeon-quest', 21840, 2, 'normal', { guestId: 'guest-dungeon-1' }),
-  createSeedScore('dungeon-quest', 20420, 6, 'normal', { userId: seedUsers[1]?.id }),
+  createSeedScore('hero-journey', 21840, 2, 'normal', { guestId: 'guest-journey-1' }),
+  createSeedScore('hero-journey', 20420, 6, 'normal', { userId: seedUsers[1]?.id }),
 ];
 
 function adProvider(unitId: string, fallbackUnitId: string, format: AdSlotConfig['format'] = 'auto') {

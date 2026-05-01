@@ -14,7 +14,7 @@ const rankingStore = useRankingStore();
 const dailyTop = computed(() =>
   rankingStore.globalRanking?.buckets.flatMap((bucket) => bucket.items.slice(0, 2)).slice(0, 10) ?? [],
 );
-const heroGame = computed(() => gameStore.games.find((game) => game.slug === 'dungeon-quest') ?? gameStore.featuredGames[0] ?? gameStore.games[0]);
+const heroGame = computed(() => gameStore.games.find((game) => game.slug === 'hero-journey') ?? gameStore.featuredGames[0] ?? gameStore.games[0]);
 const heroImageUrl = computed(() => heroGame.value?.thumbnailUrl ?? heroGame.value?.bannerUrl);
 const recommendationGames = computed(() => {
   const featured = gameStore.featuredGames.filter((game) => game.slug !== heroGame.value?.slug).slice(0, 3);

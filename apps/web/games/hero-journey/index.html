@@ -1,0 +1,1341 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <title>용사의 여정 Runtime</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap');
+
+      :root {
+        color-scheme: dark;
+        --app-width: 100vw;
+        --app-height: 100dvh;
+        --edge-left: max(12px, env(safe-area-inset-left));
+        --edge-right: max(12px, env(safe-area-inset-right));
+        --edge-top: max(12px, env(safe-area-inset-top));
+        --edge-bottom: max(12px, env(safe-area-inset-bottom));
+        --hud-max-width: 420px;
+      }
+
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        min-height: var(--app-height);
+        height: var(--app-height);
+        background:
+          radial-gradient(circle at top left, rgba(79, 172, 254, 0.18), transparent 26%),
+          radial-gradient(circle at right 20% top 12%, rgba(0, 242, 254, 0.14), transparent 20%),
+          #071019;
+        overflow: hidden;
+        font-family: 'Space Grotesk', sans-serif;
+        overscroll-behavior: none;
+      }
+
+      #game-shell {
+        position: relative;
+        width: 100%;
+        height: var(--app-height);
+        min-height: var(--app-height);
+      }
+
+      #game-shell,
+      #game-shell * {
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      #game-shell input,
+      #game-shell textarea,
+      #game-shell select {
+        user-select: text;
+        -webkit-user-select: text;
+        -webkit-touch-callout: default;
+      }
+
+      canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+        touch-action: none;
+      }
+
+      .hud {
+        position: absolute;
+        inset: var(--edge-top) var(--edge-right) auto var(--edge-left);
+        display: grid;
+        gap: clamp(8px, 1.6vh, 12px);
+        pointer-events: none;
+      }
+
+      .hud-card {
+        width: min(var(--hud-max-width), calc(var(--app-width) - var(--edge-left) - var(--edge-right)));
+        padding: clamp(10px, 2vw, 14px) clamp(12px, 2.4vw, 16px);
+        border-radius: clamp(14px, 2vw, 18px);
+        backdrop-filter: blur(18px);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(7, 16, 25, 0.62);
+        box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+      }
+
+      .eyebrow {
+        font-size: 0.72rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: #8fd7ff;
+      }
+
+      .title-row,
+      .stats-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .title-row strong,
+      .stats-row strong {
+        color: #f5f8ff;
+        font-size: clamp(0.92rem, 2.5vw, 1.05rem);
+      }
+
+      .title-row span,
+      .stats-row span,
+      .hud-card p {
+        color: rgba(245, 248, 255, 0.84);
+        margin: 0;
+        font-size: clamp(0.8rem, 2.1vw, 0.95rem);
+        line-height: 1.4;
+      }
+
+      #quest-text,
+      #status-text,
+      .hint-chip {
+        display: -webkit-box;
+        overflow: hidden;
+        -webkit-box-orient: vertical;
+      }
+
+      #quest-text,
+      #status-text {
+        -webkit-line-clamp: 2;
+      }
+
+      .health-shell {
+        width: 100%;
+        height: clamp(8px, 1.4vh, 10px);
+        border-radius: 999px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.16);
+        margin: 0;
+      }
+
+      .health-fill {
+        height: 100%;
+        width: 100%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #ff7d8a, #ffd36b);
+        transition: width 120ms linear;
+      }
+
+      .mana-fill {
+        height: 100%;
+        width: 100%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #59c4ff, #9a8cff);
+        transition: width 120ms linear;
+      }
+
+      .hud {
+        position: absolute;
+        inset: var(--edge-top) auto auto var(--edge-left);
+        display: grid;
+        gap: 8px;
+        width: min(420px, calc(var(--app-width) - var(--edge-left) - var(--edge-right) - 64px));
+        pointer-events: none;
+      }
+
+      .hud-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .hud-copy {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+      }
+
+      .hud-title,
+      .hud-label strong {
+        color: #f5f8ff;
+        font-size: 0.96rem;
+        line-height: 1.2;
+      }
+
+      .hud-quest,
+      .hud-label {
+        margin: 0;
+        color: rgba(245, 248, 255, 0.78);
+        font-size: 0.78rem;
+        line-height: 1.35;
+      }
+
+      .hud-stats {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .hud-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .meter-stack {
+        display: grid;
+        gap: 8px;
+        width: min(320px, calc(var(--app-width) - var(--edge-left) - var(--edge-right) - 64px));
+      }
+
+      .meter-row {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 10px;
+        align-items: center;
+      }
+
+      .meter-key {
+        color: rgba(245, 248, 255, 0.82);
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+      }
+
+      .meter-value {
+        display: none;
+      }
+
+      .status-toast {
+        position: absolute;
+        left: 50%;
+        bottom: calc(var(--edge-bottom) + 86px);
+        transform: translateX(-50%);
+        width: min(460px, calc(var(--app-width) - var(--edge-left) - var(--edge-right)));
+        margin: 0;
+        color: rgba(245, 248, 255, 0.88);
+        font-size: 0.82rem;
+        line-height: 1.4;
+        text-align: center;
+        text-shadow: 0 2px 14px rgba(0, 0, 0, 0.42);
+        pointer-events: none;
+      }
+
+      .status-toast:empty {
+        display: none;
+      }
+
+      .duel-result-panel {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: min(360px, calc(var(--app-width) - var(--edge-left) - var(--edge-right)));
+        display: grid;
+        gap: 12px;
+        padding: 18px;
+        border-radius: 20px;
+        border: 1px solid rgba(143, 215, 255, 0.22);
+        background:
+          radial-gradient(circle at 16% 0%, rgba(143, 215, 255, 0.24), transparent 36%),
+          linear-gradient(145deg, rgba(7, 16, 25, 0.94), rgba(17, 24, 39, 0.94));
+        box-shadow: 0 28px 80px rgba(0, 0, 0, 0.42);
+        transform: translate(-50%, -50%);
+        z-index: 34;
+        pointer-events: auto;
+        text-align: center;
+        backdrop-filter: blur(18px);
+      }
+
+      .duel-result-panel[hidden] {
+        display: none;
+      }
+
+      .duel-result-panel[data-result='win'] {
+        border-color: rgba(125, 255, 179, 0.3);
+        background:
+          radial-gradient(circle at 18% 0%, rgba(125, 255, 179, 0.24), transparent 36%),
+          linear-gradient(145deg, rgba(5, 24, 18, 0.94), rgba(18, 38, 31, 0.94));
+      }
+
+      .duel-result-panel[data-result='lose'] {
+        border-color: rgba(255, 125, 138, 0.3);
+      }
+
+      .duel-result-badge {
+        justify-self: center;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(245, 248, 255, 0.18);
+        color: #8fd7ff;
+        font-size: 0.7rem;
+        font-weight: 900;
+        letter-spacing: 0;
+      }
+
+      .duel-result-panel[data-result='win'] .duel-result-badge {
+        color: #7dffb3;
+      }
+
+      .duel-result-panel[data-result='lose'] .duel-result-badge {
+        color: #ff9aa5;
+      }
+
+      .duel-result-panel h2 {
+        margin: 0;
+        color: #ffffff;
+        font-size: 3rem;
+        line-height: 0.95;
+      }
+
+      .duel-result-panel p {
+        margin: 0;
+        color: rgba(245, 248, 255, 0.78);
+        font-size: 0.82rem;
+        line-height: 1.5;
+      }
+
+      .duel-result-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .duel-result-actions .p2p-button {
+        flex: 1;
+        min-width: 120px;
+      }
+
+      .duel-result-actions .p2p-button--accent {
+        border-color: rgba(125, 255, 179, 0.36);
+        background: #7dffb3;
+        color: #061713;
+      }
+
+      .duel-result-panel[data-result='lose'] .duel-result-actions .p2p-button--accent {
+        border-color: rgba(255, 154, 165, 0.38);
+        background: #ff9aa5;
+        color: #16080a;
+      }
+
+      @media (max-width: 430px) {
+        .duel-result-panel h2 {
+          font-size: 2.35rem;
+        }
+      }
+
+      .p2p-connected-indicator {
+        position: fixed;
+        top: calc(var(--edge-top) + 52px);
+        right: var(--edge-right);
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(95, 255, 168, 0.18);
+        background: rgba(7, 20, 14, 0.72);
+        color: rgba(230, 255, 239, 0.9);
+        font-size: 0.7rem;
+        line-height: 1;
+        letter-spacing: 0.02em;
+        backdrop-filter: blur(14px);
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+        pointer-events: none;
+        z-index: 32;
+      }
+
+      .p2p-connected-indicator[hidden] {
+        display: none;
+      }
+
+      .p2p-connected-indicator__dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: #55ff9b;
+        box-shadow: 0 0 10px rgba(85, 255, 155, 0.72);
+        flex: 0 0 auto;
+      }
+
+      .utility-menu {
+        position: fixed;
+        top: var(--edge-top);
+        right: var(--edge-right);
+        display: grid;
+        justify-items: end;
+        gap: 8px;
+        z-index: 40;
+        pointer-events: auto;
+      }
+
+      .menu-panel {
+        display: grid;
+        gap: 8px;
+        min-width: 168px;
+      }
+
+      .menu-panel[hidden] {
+        display: none;
+      }
+
+      .menu-note {
+        margin: 0;
+        padding: 10px 12px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(245, 248, 255, 0.76);
+        font-size: 0.76rem;
+        line-height: 1.45;
+      }
+
+      .action-bar {
+        position: absolute;
+        right: var(--edge-right);
+        bottom: var(--edge-bottom);
+        display: grid;
+        gap: clamp(8px, 1.4vh, 10px);
+        justify-items: end;
+      }
+
+      .hint-chip {
+        max-width: min(340px, calc(var(--app-width) - var(--edge-left) - var(--edge-right)));
+        padding: clamp(8px, 1.8vw, 10px) clamp(12px, 2vw, 14px);
+        border-radius: 999px;
+        color: rgba(245, 248, 255, 0.86);
+        background: rgba(7, 16, 25, 0.62);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(18px);
+        line-height: 1.32;
+        -webkit-line-clamp: 2;
+      }
+
+      .attack-button {
+        pointer-events: auto;
+        border: 0;
+        border-radius: 18px;
+        padding: 14px 18px;
+        min-width: 136px;
+        min-height: 52px;
+        background: linear-gradient(135deg, #ff8b6e, #ff5f6d);
+        color: white;
+        font-weight: 700;
+        font-size: clamp(0.92rem, 2.4vw, 1rem);
+        box-shadow: 0 18px 34px rgba(255, 95, 109, 0.28);
+        cursor: pointer;
+      }
+
+      .attack-button:disabled {
+        opacity: 0.55;
+        cursor: wait;
+      }
+
+      .magic-button {
+        pointer-events: auto;
+        border: 0;
+        border-radius: 18px;
+        padding: 14px 18px;
+        min-width: 136px;
+        min-height: 52px;
+        background: linear-gradient(135deg, #53b7ff, #6b6cff);
+        color: white;
+        font-weight: 700;
+        font-size: clamp(0.92rem, 2.4vw, 1rem);
+        box-shadow: 0 18px 34px rgba(91, 123, 255, 0.28);
+        cursor: pointer;
+      }
+
+      .magic-button:disabled {
+        opacity: 0.55;
+        cursor: wait;
+      }
+
+      .mobile-controls {
+        position: absolute;
+        inset: auto var(--edge-right) var(--edge-bottom) var(--edge-left);
+        display: none;
+        min-height: 144px;
+        pointer-events: none;
+        z-index: 12;
+      }
+
+      .mobile-joystick {
+        position: absolute;
+        left: 0;
+        bottom: 0;
+        width: 136px;
+        height: 136px;
+        pointer-events: auto;
+        touch-action: none;
+      }
+
+      .mobile-joystick__base {
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(7, 16, 25, 0.18);
+        backdrop-filter: blur(14px);
+        box-shadow: inset 0 0 0 1px rgba(143, 215, 255, 0.06);
+      }
+
+      .mobile-joystick__ring {
+        position: absolute;
+        inset: 18px;
+        border-radius: 50%;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .mobile-joystick__thumb {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 60px;
+        height: 60px;
+        margin-left: -30px;
+        margin-top: -30px;
+        border-radius: 50%;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        background: rgba(143, 215, 255, 0.24);
+        box-shadow: 0 12px 26px rgba(0, 0, 0, 0.18);
+        transition: transform 50ms linear, background 120ms ease;
+      }
+
+      .mobile-joystick[data-active='true'] .mobile-joystick__thumb {
+        background: rgba(143, 215, 255, 0.34);
+      }
+
+      .mobile-buttons {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        width: min(250px, calc(100vw - var(--edge-left) - var(--edge-right)));
+        pointer-events: auto;
+      }
+
+      .mobile-action-button {
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 18px;
+        min-height: 58px;
+        padding: 10px 12px;
+        color: #f5f8ff;
+        font: inherit;
+        font-size: 0.84rem;
+        font-weight: 700;
+        backdrop-filter: blur(16px);
+        background: rgba(7, 16, 25, 0.48);
+        box-shadow: 0 14px 28px rgba(0, 0, 0, 0.18);
+        pointer-events: auto;
+        touch-action: manipulation;
+      }
+
+      .mobile-action-button--attack {
+        background: linear-gradient(135deg, rgba(255, 139, 110, 0.82), rgba(255, 95, 109, 0.72));
+      }
+
+      .mobile-action-button--magic {
+        background: linear-gradient(135deg, rgba(83, 183, 255, 0.8), rgba(107, 108, 255, 0.72));
+      }
+
+      .mobile-action-button--dodge {
+        background: linear-gradient(135deg, rgba(255, 209, 102, 0.72), rgba(255, 150, 70, 0.64));
+      }
+
+      .mobile-action-button--block {
+        background: linear-gradient(135deg, rgba(123, 245, 191, 0.4), rgba(58, 185, 143, 0.3));
+      }
+
+      .mobile-action-button[data-active='true'] {
+        border-color: rgba(255, 255, 255, 0.28);
+        box-shadow: 0 16px 32px rgba(0, 0, 0, 0.24), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+      }
+
+      .mobile-action-button:disabled {
+        opacity: 0.45;
+        cursor: wait;
+      }
+
+      .sound-toggle {
+        pointer-events: auto;
+        border: 1px solid rgba(143, 215, 255, 0.18);
+        border-radius: 999px;
+        padding: 8px 12px;
+        min-height: 38px;
+        background: rgba(12, 24, 36, 0.76);
+        color: #f5f8ff;
+        font: inherit;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        cursor: pointer;
+        box-shadow: 0 10px 26px rgba(0, 0, 0, 0.22);
+      }
+
+      .sound-toggle[data-enabled='false'] {
+        color: rgba(245, 248, 255, 0.66);
+        border-color: rgba(255, 255, 255, 0.08);
+        background: rgba(7, 16, 25, 0.56);
+      }
+
+      .action-bar {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .hint-chip {
+        display: none;
+      }
+
+      .attack-button,
+      .magic-button,
+      .mobile-action-button,
+      .sound-toggle,
+      .p2p-toggle,
+      .p2p-button,
+      .icon-button,
+      .menu-button {
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+        color: #f5f8ff;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+        backdrop-filter: blur(14px);
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation;
+      }
+
+      .attack-button,
+      .magic-button,
+      .menu-button {
+        padding: 12px 16px;
+        min-height: 44px;
+        min-width: 92px;
+        font-size: 0.84rem;
+      }
+
+      .mobile-action-button {
+        font-size: 0.8rem;
+      }
+
+      .mobile-action-button--attack,
+      .mobile-action-button--magic,
+      .mobile-action-button--dodge,
+      .mobile-action-button--block {
+        background: rgba(255, 255, 255, 0.12);
+      }
+
+      .sound-toggle,
+      .p2p-toggle,
+      .p2p-button {
+        min-height: 40px;
+        padding: 10px 14px;
+        font-size: 0.78rem;
+      }
+
+      .icon-button {
+        width: 44px;
+        height: 44px;
+        padding: 0;
+        display: inline-grid;
+        place-items: center;
+        font-size: 1.12rem;
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+        backdrop-filter: none;
+      }
+
+      .p2p-panel {
+        position: absolute;
+        left: var(--edge-left);
+        bottom: var(--edge-bottom);
+        width: min(360px, calc(var(--app-width) - var(--edge-left) - var(--edge-right)));
+        display: grid;
+        gap: 10px;
+        padding: 12px;
+        border-radius: 18px;
+        background: rgba(7, 16, 25, 0.74);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        backdrop-filter: blur(18px);
+        box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+        z-index: 11;
+        pointer-events: auto;
+      }
+
+      .p2p-panel[hidden] {
+        display: none;
+      }
+
+      .p2p-header,
+      .p2p-status-row,
+      .p2p-actions,
+      .p2p-split {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .p2p-header strong,
+      .p2p-status,
+      .p2p-role {
+        color: #f5f8ff;
+      }
+
+      .p2p-status-row {
+        flex-wrap: wrap;
+      }
+
+      .p2p-status,
+      .p2p-role {
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        font-size: 0.74rem;
+        line-height: 1;
+      }
+
+      .p2p-role {
+        color: #8fd7ff;
+      }
+
+      .p2p-toggle,
+      .p2p-button {
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.12);
+        color: #f5f8ff;
+        border-radius: 999px;
+        font: inherit;
+      }
+
+      .p2p-toggle,
+      .p2p-button {
+        cursor: pointer;
+      }
+
+      .p2p-toggle {
+        min-height: 36px;
+        padding: 8px 12px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .p2p-body {
+        display: grid;
+        gap: 10px;
+      }
+
+      .p2p-panel[data-collapsed='true'] .p2p-body {
+        display: none;
+      }
+
+      .p2p-actions,
+      .p2p-split {
+        flex-wrap: wrap;
+      }
+
+      .p2p-actions[hidden],
+      .p2p-split[hidden],
+      .p2p-input-group[hidden] {
+        display: none;
+      }
+
+      .p2p-actions .p2p-button,
+      .p2p-split .p2p-button {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .p2p-split .p2p-button--compact {
+        flex: 0 0 auto;
+        min-width: auto;
+        padding-inline: 12px;
+        white-space: nowrap;
+      }
+
+      .p2p-button {
+        min-height: 38px;
+        padding: 9px 12px;
+        font-size: 0.82rem;
+        font-weight: 700;
+      }
+
+      .p2p-button--accent {
+        border-color: rgba(255, 255, 255, 0.16);
+        background: rgba(255, 255, 255, 0.12);
+      }
+
+      .p2p-button--danger {
+        border-color: rgba(255, 255, 255, 0.16);
+        background: rgba(255, 255, 255, 0.12);
+      }
+
+      .p2p-input-group {
+        display: grid;
+        gap: 6px;
+      }
+
+      .p2p-input-group label,
+      .p2p-help,
+      .p2p-empty {
+        color: rgba(245, 248, 255, 0.82);
+        font-size: 0.78rem;
+        line-height: 1.4;
+      }
+
+      .p2p-room-name {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.06);
+        color: #f5f8ff;
+        font: inherit;
+        font-size: 0.8rem;
+        line-height: 1.4;
+        padding: 10px 12px;
+      }
+
+      .p2p-room-name::placeholder {
+        color: rgba(245, 248, 255, 0.34);
+      }
+
+      .p2p-list {
+        display: grid;
+        gap: 8px;
+        max-height: 204px;
+        overflow-y: auto;
+        padding-right: 2px;
+      }
+
+      .p2p-room-card,
+      .p2p-empty {
+        display: grid;
+        gap: 8px;
+        padding: 10px 12px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .p2p-room-card strong {
+        color: #f5f8ff;
+        font-size: 0.82rem;
+      }
+
+      .p2p-room-card--owned {
+        border-color: rgba(95, 255, 168, 0.22);
+        background: rgba(95, 255, 168, 0.08);
+      }
+
+      .p2p-room-meta {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .p2p-room-card small {
+        color: rgba(245, 248, 255, 0.66);
+        font-size: 0.72rem;
+      }
+
+      .p2p-help {
+        margin: 0;
+        padding: 10px 12px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .editor-panel {
+        position: absolute;
+        top: var(--edge-top);
+        right: var(--edge-right);
+        width: min(360px, calc(var(--app-width) - var(--edge-left) - var(--edge-right)));
+        display: grid;
+        gap: 10px;
+        padding: 14px;
+        border-radius: 20px;
+        background: rgba(7, 16, 25, 0.78);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        backdrop-filter: blur(18px);
+        box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+        z-index: 12;
+        pointer-events: auto;
+      }
+
+      .editor-panel[hidden] {
+        display: none;
+      }
+
+      .editor-header,
+      .editor-actions,
+      .editor-row-head,
+      .editor-control {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .editor-header strong {
+        color: #f5f8ff;
+      }
+
+      .editor-panel label,
+      .editor-panel span,
+      .editor-panel small {
+        color: rgba(245, 248, 255, 0.82);
+        font-size: 0.82rem;
+      }
+
+      .editor-select,
+      .editor-number,
+      .editor-button {
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.08);
+        color: #f5f8ff;
+        border-radius: 12px;
+        font: inherit;
+      }
+
+      .editor-select,
+      .editor-number {
+        padding: 8px 10px;
+      }
+
+      .editor-button {
+        padding: 8px 12px;
+        cursor: pointer;
+      }
+
+      .editor-controls {
+        display: grid;
+        gap: 10px;
+      }
+
+      .editor-stack {
+        display: grid;
+        gap: 10px;
+      }
+
+      .editor-group {
+        display: grid;
+        gap: 8px;
+        padding: 10px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .editor-control {
+        gap: 8px;
+      }
+
+      .editor-range {
+        flex: 1;
+        accent-color: #8fd7ff;
+      }
+
+      .editor-number {
+        width: 76px;
+      }
+
+      .editor-handle-card {
+        display: grid;
+        gap: 8px;
+        padding-top: 2px;
+      }
+
+      .editor-handle-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .editor-step-toggle {
+        display: inline-flex;
+        gap: 6px;
+      }
+
+      .editor-step-button,
+      .editor-handle-button {
+        border: 1px solid rgba(143, 215, 255, 0.12);
+        background: rgba(12, 24, 36, 0.78);
+        color: #f5f8ff;
+        border-radius: 12px;
+        font: inherit;
+        cursor: pointer;
+      }
+
+      .editor-step-button {
+        padding: 7px 10px;
+        font-size: 0.76rem;
+      }
+
+      .editor-step-button[data-active='true'] {
+        background: rgba(143, 215, 255, 0.18);
+        border-color: rgba(143, 215, 255, 0.3);
+      }
+
+      .editor-handle-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .editor-handle-button {
+        min-height: 42px;
+        padding: 10px 8px;
+        font-size: 0.8rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        touch-action: manipulation;
+      }
+
+      .editor-note,
+      .editor-status {
+        margin: 0;
+        padding: 10px 12px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.04);
+        line-height: 1.4;
+      }
+
+      .editor-inline-buttons {
+        display: flex;
+        gap: 8px;
+      }
+
+      .editor-inline-buttons .editor-button {
+        flex: 1;
+      }
+
+      .editor-hint {
+        line-height: 1.35;
+      }
+
+      @media (max-width: 720px) {
+        .hud {
+          width: calc(var(--app-width) - var(--edge-left) - var(--edge-right) - 56px);
+        }
+
+        .meter-stack {
+          width: calc(var(--app-width) - var(--edge-left) - var(--edge-right) - 56px);
+        }
+
+        .action-bar {
+          left: var(--edge-left);
+          right: var(--edge-right);
+          justify-content: flex-end;
+        }
+
+        .attack-button {
+          width: auto;
+        }
+
+        .magic-button {
+          width: auto;
+        }
+
+        .p2p-panel {
+          left: var(--edge-left);
+          right: var(--edge-right);
+          width: auto;
+          bottom: calc(var(--edge-bottom) + 196px);
+        }
+
+        .editor-panel {
+          top: auto;
+          bottom: calc(var(--edge-bottom) + 74px);
+          left: var(--edge-left);
+          right: var(--edge-right);
+          width: auto;
+        }
+      }
+
+      @media (pointer: coarse), (max-width: 720px) {
+        .mobile-controls {
+          display: block;
+        }
+
+        .action-bar {
+          display: none;
+        }
+
+        .status-toast {
+          bottom: calc(var(--edge-bottom) + 146px);
+        }
+
+        .editor-panel {
+          bottom: calc(var(--edge-bottom) + 166px);
+        }
+      }
+
+      @media (max-width: 420px), (max-height: 760px) {
+        :root {
+          --hud-max-width: 360px;
+        }
+
+        .eyebrow {
+          font-size: 0.64rem;
+          letter-spacing: 0.12em;
+        }
+
+        .hud {
+          width: calc(var(--app-width) - var(--edge-left) - var(--edge-right) - 52px);
+        }
+
+        .health-shell {
+          margin: 6px 0 4px;
+        }
+
+        .meter-stack {
+          width: calc(var(--app-width) - var(--edge-left) - var(--edge-right) - 52px);
+        }
+
+        .status-toast {
+          font-size: 0.76rem;
+        }
+
+        .editor-panel {
+          padding: 12px;
+        }
+
+        .editor-step-button {
+          min-height: 38px;
+        }
+
+        .editor-handle-button {
+          min-height: 46px;
+          font-size: 0.82rem;
+        }
+
+        .mobile-controls {
+          min-height: 132px;
+        }
+
+        .mobile-joystick {
+          width: 118px;
+          height: 118px;
+        }
+
+        .mobile-joystick__thumb {
+          width: 52px;
+          height: 52px;
+          margin-left: -26px;
+          margin-top: -26px;
+        }
+
+        .mobile-buttons {
+          width: min(220px, calc(100vw - var(--edge-left) - var(--edge-right)));
+          gap: 8px;
+        }
+
+        .mobile-action-button {
+          min-height: 52px;
+          font-size: 0.78rem;
+        }
+      }
+
+      @media (max-height: 720px) {
+        .hint-chip {
+          display: none;
+        }
+      }
+    </style>
+    <script type="module" src="/src/game-runtime/hero-journey.ts"></script>
+  </head>
+  <body>
+    <div id="game-shell">
+      <canvas id="game"></canvas>
+
+      <div class="hud">
+        <div class="hud-head">
+          <div class="hud-copy">
+            <strong id="objective-text" class="hud-title">용사의 여정</strong>
+            <p id="quest-text" class="hud-quest">여정을 준비하는 중입니다...</p>
+          </div>
+
+          <div class="hud-stats">
+            <span class="hud-label">S <strong id="score-value">0</strong></span>
+            <span class="hud-label">T <strong id="timer-value">02:35</strong></span>
+          </div>
+        </div>
+
+        <div class="meter-stack">
+          <div class="meter-row">
+            <span class="meter-key">H</span>
+            <div class="health-shell">
+              <div class="health-fill" id="health-fill"></div>
+            </div>
+            <span id="health-label" class="meter-value">100 / 100</span>
+          </div>
+
+          <div class="meter-row">
+            <span class="meter-key">M</span>
+            <div class="health-shell">
+              <div class="mana-fill" id="mana-fill"></div>
+            </div>
+            <span id="mana-label" class="meter-value">80 / 80</span>
+          </div>
+        </div>
+      </div>
+
+      <p id="status-text" class="status-toast"></p>
+      <div id="duel-result-panel" class="duel-result-panel" hidden aria-live="polite">
+        <span id="duel-result-badge" class="duel-result-badge">DUEL RESULT</span>
+        <h2 id="duel-result-title">승리</h2>
+        <p id="duel-result-summary">상대를 쓰러뜨렸습니다.</p>
+        <div class="duel-result-actions">
+          <button id="duel-rematch-button" class="p2p-button p2p-button--accent" type="button">다시 대전</button>
+          <button id="duel-lobby-button" class="p2p-button" type="button">온라인 메뉴</button>
+        </div>
+      </div>
+      <div id="p2p-connected-indicator" class="p2p-connected-indicator" hidden aria-live="polite">
+        <span class="p2p-connected-indicator__dot" aria-hidden="true"></span>
+        <span id="p2p-connected-indicator-text">매치 참가됨</span>
+      </div>
+
+      <div id="utility-menu" class="utility-menu" aria-label="Quick Menu">
+        <button id="menu-toggle" class="icon-button" type="button" aria-expanded="false" aria-label="메뉴">☰</button>
+        <div id="menu-panel" class="menu-panel" hidden>
+          <p class="menu-note">이동: WASD / 터치 이동<br />공격: Space<br />마법: Shift<br />구르기: C<br />막기: F</p>
+          <button id="sound-toggle" class="sound-toggle" type="button" aria-pressed="true">사운드 On</button>
+          <button id="menu-match-button" class="menu-button" type="button">온라인 매치</button>
+        </div>
+      </div>
+
+      <div class="action-bar">
+        <button id="magic-button" class="magic-button" type="button">마법</button>
+        <button id="attack-button" class="attack-button" type="button">공격</button>
+      </div>
+
+      <div class="mobile-controls" aria-label="Mobile Controls">
+        <div id="virtual-joystick" class="mobile-joystick" data-active="false">
+          <div class="mobile-joystick__base">
+            <div class="mobile-joystick__ring"></div>
+            <div id="virtual-joystick-thumb" class="mobile-joystick__thumb"></div>
+          </div>
+        </div>
+
+        <div class="mobile-buttons">
+          <button id="block-button" class="mobile-action-button mobile-action-button--block" type="button">막기</button>
+          <button id="dodge-button" class="mobile-action-button mobile-action-button--dodge" type="button">구르기</button>
+          <button id="mobile-magic-button" class="mobile-action-button mobile-action-button--magic" type="button">마법</button>
+          <button id="mobile-attack-button" class="mobile-action-button mobile-action-button--attack" type="button">공격</button>
+        </div>
+      </div>
+
+      <aside id="p2p-panel" class="p2p-panel" data-collapsed="true" aria-label="P2P Match" hidden>
+        <div class="p2p-header">
+          <div>
+            <span class="eyebrow">Network</span>
+            <strong>P2P Match</strong>
+          </div>
+          <button id="p2p-toggle" class="p2p-toggle" type="button" aria-expanded="false">열기</button>
+        </div>
+
+        <div class="p2p-body">
+          <div class="p2p-status-row">
+            <span id="p2p-status" class="p2p-status">오프라인</span>
+            <span id="p2p-role" class="p2p-role">Solo</span>
+          </div>
+
+          <div id="p2p-lobby-actions" class="p2p-actions">
+            <button id="p2p-host-button" class="p2p-button p2p-button--accent" type="button">방 만들기</button>
+            <button id="p2p-join-button" class="p2p-button" type="button">참가하기</button>
+          </div>
+
+          <div id="p2p-room-actions" class="p2p-actions" hidden>
+            <button id="p2p-copy-invite-button" class="p2p-button p2p-button--compact" type="button" hidden>
+              링크 복사
+            </button>
+            <button id="p2p-rematch-button" class="p2p-button p2p-button--accent" type="button" hidden>다시 대전</button>
+            <button id="p2p-disconnect-button" class="p2p-button p2p-button--danger" type="button">연결 종료</button>
+          </div>
+
+          <div id="p2p-room-name-group" class="p2p-input-group">
+            <label for="p2p-room-name">새 방 이름</label>
+            <input id="p2p-room-name" class="p2p-room-name" type="text" maxlength="32" placeholder="예: Seoul Raid Room" />
+          </div>
+
+          <div id="p2p-lobby-tools" class="p2p-split">
+            <button id="p2p-refresh-button" class="p2p-button" type="button">로비 새로고침</button>
+          </div>
+
+          <div id="p2p-room-list" class="p2p-list" aria-live="polite">
+            <div class="p2p-empty">활성 방이 없습니다. 먼저 방을 만들거나 잠시 후 새로고침하세요.</div>
+          </div>
+
+          <p id="p2p-help-text" class="p2p-help">
+            로비에서 방을 만들면 서버가 offer/answer 신호를 중계합니다. 호스트 heartbeat가 멈추면 방은 자동으로 정리됩니다.
+          </p>
+        </div>
+      </aside>
+
+      <aside id="editor-panel" class="editor-panel" hidden>
+        <div class="editor-header">
+          <div>
+            <span class="eyebrow">Tune</span>
+            <strong>Transform Editor</strong>
+          </div>
+          <button id="editor-close" class="editor-button" type="button">닫기</button>
+        </div>
+        <label class="editor-row-head">
+          <span>Mode</span>
+          <select id="editor-mode" class="editor-select"></select>
+        </label>
+        <label class="editor-row-head">
+          <span id="editor-preset-label">Preset</span>
+          <select id="editor-preset" class="editor-select"></select>
+        </label>
+        <div id="editor-controls" class="editor-controls"></div>
+        <p class="editor-hint">
+          `Shift + E`로 열고 닫을 수 있습니다. 맵 모드에서는 클릭 배치, 우클릭 삭제, `R/F` 회전이 됩니다.
+        </p>
+        <div class="editor-actions">
+          <button id="editor-reset" class="editor-button" type="button">리셋</button>
+          <button id="editor-copy" class="editor-button" type="button">JSON 복사</button>
+        </div>
+      </aside>
+    </div>
+  </body>
+</html>

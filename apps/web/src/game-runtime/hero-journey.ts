@@ -137,7 +137,7 @@ if (
   !editorResetNode ||
   !editorCopyNode
 ) {
-  throw new Error('Dungeon Quest UI shell is incomplete');
+  throw new Error('Hero Journey UI shell is incomplete');
 }
 
 const canvas = canvasNode;
@@ -228,6 +228,30 @@ type ModelKey =
   | 'weapon-sword'
   | 'wood-structure'
   | 'wood-support';
+
+type BiomeModelKey =
+  | 'forest-pack'
+  | 'tree-1'
+  | 'tree-2'
+  | 'tree-3'
+  | 'bush-1'
+  | 'bush-2'
+  | 'bush-3'
+  | 'grass-1'
+  | 'grass-2'
+  | 'plant-1'
+  | 'plant-4'
+  | 'plant-5'
+  | 'rock-1'
+  | 'rock-3'
+  | 'rock-6'
+  | 'mountain-1'
+  | 'mountain-2'
+  | 'mountain-3'
+  | 'terrain-1'
+  | 'terrain-2';
+
+type TemplateKey = ModelKey | BiomeModelKey;
 
 type CircleObstacle = {
   x: number;
@@ -539,6 +563,26 @@ type MapTool =
   | 'dirt'
   | 'rocks'
   | 'stones'
+  | 'forest-pack'
+  | 'tree-1'
+  | 'tree-2'
+  | 'tree-3'
+  | 'bush-1'
+  | 'bush-2'
+  | 'bush-3'
+  | 'grass-1'
+  | 'grass-2'
+  | 'plant-1'
+  | 'plant-4'
+  | 'plant-5'
+  | 'rock-1'
+  | 'rock-3'
+  | 'rock-6'
+  | 'mountain-1'
+  | 'mountain-2'
+  | 'mountain-3'
+  | 'terrain-1'
+  | 'terrain-2'
   | 'trap'
   | 'wood-structure'
   | 'wood-support'
@@ -584,8 +628,21 @@ type WallSegmentConfig = GridPoint & {
   opening?: boolean;
 };
 
+type BuiltInPropKey =
+  | 'banner'
+  | 'barrel'
+  | 'column'
+  | 'dirt'
+  | 'rocks'
+  | 'stones'
+  | 'trap'
+  | 'wood-structure'
+  | 'wood-support';
+
+type JourneyPropKey = BuiltInPropKey | BiomeModelKey;
+
 type PropConfig = GridPoint & {
-  key: 'banner' | 'barrel' | 'column' | 'dirt' | 'rocks' | 'stones' | 'trap' | 'wood-structure' | 'wood-support';
+  key: JourneyPropKey;
   radius: number;
   rotationQuarter?: number;
 };
@@ -626,17 +683,24 @@ type DungeonMapConfig = {
   exit: GridPoint;
 };
 
+type JourneyBiome = 'forest' | 'desert' | 'mountain' | 'ruin';
+
 type DungeonLevelConfig = {
   id: string;
   name: string;
+  biome: JourneyBiome;
   quest: string;
   intro: string;
   clearText: string;
   map: DungeonMapConfig;
 };
 
+const GAME_TITLE = '용사의 여정';
+const GAME_SLUG = 'hero-journey';
+const GAME_PLAY_PATH = `/games/${GAME_SLUG}/play`;
 const MODEL_ROOT = '/assets/dungeon-quest/models';
 const ANIMATION_ROOT = '/assets/dungeon-quest/anims';
+const BIOME_MODEL_ROOT = '/assets/hero-journey/biomes';
 const WEAPON_EDITOR_STORAGE_KEY = 'dungeon-quest:weapon-editor:v1';
 const MAP_EDITOR_STORAGE_KEY = 'dungeon-quest:map-editor:v3';
 const SOUND_SETTINGS_STORAGE_KEY = 'dungeon-quest:sound:v1';
@@ -669,6 +733,92 @@ const EDITOR_PRESET_FIELDS: Record<EditorPresetKey, EditorField[]> = {
     { key: 'swingBladeRotationDeg', label: 'Blade Rot', min: -90, max: 90, step: 1 },
   ],
 };
+const BIOME_MODEL_CONFIGS: Record<BiomeModelKey, { file: string; scale: number; stripMeshes?: string[] }> = {
+  'forest-pack': { file: 'forest-pack.fbx', scale: 0.0005, stripMeshes: ['Plane'] },
+  'tree-1': { file: 'tree-1.fbx', scale: 0.004 },
+  'tree-2': { file: 'tree-2.fbx', scale: 0.004 },
+  'tree-3': { file: 'tree-3.fbx', scale: 0.004 },
+  'bush-1': { file: 'bush-1.fbx', scale: 0.006 },
+  'bush-2': { file: 'bush-2.fbx', scale: 0.006 },
+  'bush-3': { file: 'bush-3.fbx', scale: 0.006 },
+  'grass-1': { file: 'grass-1.fbx', scale: 0.01 },
+  'grass-2': { file: 'grass-2.fbx', scale: 0.01 },
+  'plant-1': { file: 'plant-1.fbx', scale: 0.006 },
+  'plant-4': { file: 'plant-4.fbx', scale: 0.006 },
+  'plant-5': { file: 'plant-5.fbx', scale: 0.006 },
+  'rock-1': { file: 'rock-1.fbx', scale: 0.006 },
+  'rock-3': { file: 'rock-3.fbx', scale: 0.006 },
+  'rock-6': { file: 'rock-6.fbx', scale: 0.006 },
+  'mountain-1': { file: 'mountain-1.fbx', scale: 0.0025 },
+  'mountain-2': { file: 'mountain-2.fbx', scale: 0.0025 },
+  'mountain-3': { file: 'mountain-3.fbx', scale: 0.0028 },
+  'terrain-1': { file: 'terrain-1.fbx', scale: 0.0035 },
+  'terrain-2': { file: 'terrain-2.fbx', scale: 0.0035 },
+};
+const JOURNEY_THEMES: Record<
+  JourneyBiome,
+  {
+    background: string;
+    fog: string;
+    fogNear: number;
+    fogFar: number;
+    sky: string;
+    ground: string;
+    ambientIntensity: number;
+    sun: string;
+    sunIntensity: number;
+    sunPosition: [number, number, number];
+  }
+> = {
+  forest: {
+    background: '#071710',
+    fog: '#0b2117',
+    fogNear: 12,
+    fogFar: 34,
+    sky: '#d9fff2',
+    ground: '#12341f',
+    ambientIntensity: 1.35,
+    sun: '#fff1bd',
+    sunIntensity: 1.85,
+    sunPosition: [4.5, 10.5, 3.6],
+  },
+  desert: {
+    background: '#1b140c',
+    fog: '#6f4a24',
+    fogNear: 13,
+    fogFar: 38,
+    sky: '#fff0ca',
+    ground: '#6d4324',
+    ambientIntensity: 1.2,
+    sun: '#ffd08a',
+    sunIntensity: 2.1,
+    sunPosition: [6.5, 11.5, 0.8],
+  },
+  mountain: {
+    background: '#101824',
+    fog: '#30465a',
+    fogNear: 14,
+    fogFar: 42,
+    sky: '#e3f5ff',
+    ground: '#263849',
+    ambientIntensity: 1.18,
+    sun: '#f6fbff',
+    sunIntensity: 1.9,
+    sunPosition: [2.8, 12, 5.5],
+  },
+  ruin: {
+    background: '#080f16',
+    fog: '#101a24',
+    fogNear: 14,
+    fogFar: 40,
+    sky: '#f4f8ff',
+    ground: '#112338',
+    ambientIntensity: 1.2,
+    sun: '#fff2d8',
+    sunIntensity: 1.75,
+    sunPosition: [5, 10, 2],
+  },
+};
 const MAP_TOOL_LABELS: Record<MapTool, string> = {
   erase: 'Erase',
   floor: 'Floor',
@@ -683,6 +833,26 @@ const MAP_TOOL_LABELS: Record<MapTool, string> = {
   dirt: 'Dirt',
   rocks: 'Rocks',
   stones: 'Stones',
+  'forest-pack': 'Forest Pack',
+  'tree-1': 'Tree 1',
+  'tree-2': 'Tree 2',
+  'tree-3': 'Tree 3',
+  'bush-1': 'Bush 1',
+  'bush-2': 'Bush 2',
+  'bush-3': 'Bush 3',
+  'grass-1': 'Grass 1',
+  'grass-2': 'Grass 2',
+  'plant-1': 'Plant 1',
+  'plant-4': 'Plant 4',
+  'plant-5': 'Plant 5',
+  'rock-1': 'Rock 1',
+  'rock-3': 'Rock 3',
+  'rock-6': 'Rock 6',
+  'mountain-1': 'Mountain 1',
+  'mountain-2': 'Mountain 2',
+  'mountain-3': 'Mountain 3',
+  'terrain-1': 'Terrain 1',
+  'terrain-2': 'Terrain 2',
   trap: 'Trap',
   'wood-structure': 'Wood Structure',
   'wood-support': 'Wood Support',
@@ -797,7 +967,7 @@ editorCursor.position.y = 0.06;
 editorCursor.visible = false;
 scene.add(editorCursor);
 
-const templates = new Map<ModelKey, TemplateAsset>();
+const templates = new Map<TemplateKey, TemplateAsset>();
 const loader = new GLTFLoader();
 const fbxLoader = new FBXLoader();
 
@@ -913,6 +1083,10 @@ const transformHandleModes: Partial<Record<keyof WeaponEditorState, TransformHan
 
 function modelUrl(name: ModelKey) {
   return `${MODEL_ROOT}/${name}.glb`;
+}
+
+function biomeModelUrl(name: BiomeModelKey) {
+  return `${BIOME_MODEL_ROOT}/${BIOME_MODEL_CONFIGS[name].file}`;
 }
 
 function animationUrl(name: string) {
@@ -1123,14 +1297,23 @@ function createDungeonLevels(): DungeonLevelConfig[] {
   pushHorizontalWalls(keep.walls, -6.5, -3, 3, { half: true });
 
   return [{
-    id: 'gate-hall',
-    name: '입구 회랑',
-    quest: '흩어진 경비를 제압하고 첫 보물상자를 여세요.',
-    intro: '1층 입구 회랑입니다. 기본 경비를 정리하고 북쪽 통로를 여세요.',
-    clearText: '입구 회랑 돌파. 무너진 채석장으로 내려갑니다.',
+    id: 'forest-road',
+    name: '숲의 들머리',
+    biome: 'forest',
+    quest: '숲길의 정찰병을 제압하고 첫 보물상자를 여세요.',
+    intro: '여정의 시작입니다. 숲길을 막은 정찰병을 정리하고 북쪽 길을 여세요.',
+    clearText: '숲길을 돌파했습니다. 사막 협곡으로 향합니다.',
     map: {
       ...entrance,
       props: [
+        { key: 'forest-pack', x: 0, z: -15.0, radius: 0, rotationQuarter: 0 },
+        { key: 'tree-1', x: -8.6, z: 8.0, radius: 0.62, rotationQuarter: 1 },
+        { key: 'tree-2', x: 8.5, z: 8.2, radius: 0.62, rotationQuarter: 3 },
+        { key: 'tree-3', x: -8.2, z: -8.2, radius: 0.62, rotationQuarter: 0 },
+        { key: 'bush-1', x: 7.8, z: -7.8, radius: 0.42, rotationQuarter: 2 },
+        { key: 'bush-2', x: -5.2, z: 6.7, radius: 0.42, rotationQuarter: 0 },
+        { key: 'grass-1', x: -2.8, z: 6.0, radius: 0, rotationQuarter: 0 },
+        { key: 'grass-2', x: 2.9, z: 6.1, radius: 0, rotationQuarter: 0 },
         { key: 'column', x: -6.4, z: -4.1, radius: 0.44, rotationQuarter: 0 },
         { key: 'column', x: 6.4, z: -4.1, radius: 0.44, rotationQuarter: 0 },
         { key: 'column', x: -6.4, z: 4.1, radius: 0.44, rotationQuarter: 0 },
@@ -1167,14 +1350,23 @@ function createDungeonLevels(): DungeonLevelConfig[] {
     },
   },
   {
-    id: 'broken-quarry',
-    name: '무너진 채석장',
-    quest: '잔해와 함정을 지나 빠른 정찰병을 끊어내세요.',
-    intro: '2층은 무너진 채석장입니다. 흙바닥, 돌무더기, 함정이 길을 좁힙니다.',
-    clearText: '채석장 통로 확보. 오래된 금고로 진입합니다.',
+    id: 'sunken-canyon',
+    name: '사막 협곡',
+    biome: 'desert',
+    quest: '메마른 협곡의 잔해와 함정을 지나 길잡이 몹을 끊어내세요.',
+    intro: '뜨거운 사막 협곡입니다. 바위, 마른 풀, 함정이 길을 좁힙니다.',
+    clearText: '사막 협곡을 벗어났습니다. 바람산 고갯길로 진입합니다.',
     map: {
       ...quarry,
       props: [
+        { key: 'terrain-1', x: -6.6, z: -7.9, radius: 0, rotationQuarter: 0 },
+        { key: 'terrain-2', x: 6.5, z: 6.6, radius: 0, rotationQuarter: 2 },
+        { key: 'rock-1', x: -8.1, z: 2.2, radius: 0.58, rotationQuarter: 0 },
+        { key: 'rock-3', x: 8.0, z: 1.9, radius: 0.58, rotationQuarter: 1 },
+        { key: 'rock-6', x: 6.9, z: -8.2, radius: 0.58, rotationQuarter: 2 },
+        { key: 'plant-1', x: -8.7, z: 7.8, radius: 0, rotationQuarter: 0 },
+        { key: 'plant-4', x: 8.8, z: 7.2, radius: 0, rotationQuarter: 0 },
+        { key: 'plant-5', x: -3.8, z: -7.8, radius: 0, rotationQuarter: 0 },
         { key: 'dirt', x: -8, z: -8, radius: 0, rotationQuarter: 0 },
         { key: 'dirt', x: -7, z: -8, radius: 0, rotationQuarter: 0 },
         { key: 'dirt', x: 7, z: -7, radius: 0, rotationQuarter: 0 },
@@ -1216,14 +1408,22 @@ function createDungeonLevels(): DungeonLevelConfig[] {
     },
   },
   {
-    id: 'old-vault',
-    name: '오래된 금고',
-    quest: '방패병과 창병을 분리해서 금고 중심을 장악하세요.',
-    intro: '3층 금고입니다. 방패병이 길목을 막고 창병이 긴 사거리로 압박합니다.',
-    clearText: '금고 봉인 해제. 마지막 오크 대장 방으로 향합니다.',
+    id: 'wind-pass',
+    name: '바람산 고갯길',
+    biome: 'mountain',
+    quest: '산길의 창병과 방패병을 분리해 고개 중심을 장악하세요.',
+    intro: '차가운 바람산 고갯길입니다. 산등성이와 돌무더기가 시야와 동선을 가릅니다.',
+    clearText: '고갯길을 넘어섰습니다. 잊힌 성소가 보입니다.',
     map: {
       ...vault,
       props: [
+        { key: 'mountain-1', x: -8.3, z: -7.4, radius: 1.15, rotationQuarter: 0 },
+        { key: 'mountain-2', x: 8.2, z: -7.2, radius: 1.15, rotationQuarter: 2 },
+        { key: 'mountain-3', x: 0, z: 7.6, radius: 1.15, rotationQuarter: 1 },
+        { key: 'rock-3', x: -8.2, z: 2.8, radius: 0.58, rotationQuarter: 0 },
+        { key: 'rock-6', x: 8.1, z: 2.8, radius: 0.58, rotationQuarter: 3 },
+        { key: 'tree-3', x: -4.8, z: 7.2, radius: 0.62, rotationQuarter: 1 },
+        { key: 'bush-3', x: 4.8, z: 7.2, radius: 0.42, rotationQuarter: 0 },
         { key: 'column', x: -4.2, z: -6.8, radius: 0.44, rotationQuarter: 0 },
         { key: 'column', x: 4.2, z: -6.8, radius: 0.44, rotationQuarter: 0 },
         { key: 'column', x: -4.2, z: 1.2, radius: 0.44, rotationQuarter: 0 },
@@ -1265,14 +1465,17 @@ function createDungeonLevels(): DungeonLevelConfig[] {
     },
   },
   {
-    id: 'orc-keep',
-    name: '오크 대장 방',
+    id: 'forgotten-sanctum',
+    name: '잊힌 성소',
+    biome: 'ruin',
     quest: '대장을 호위병과 떼어내고 마지막 상자를 여세요.',
-    intro: '최종층입니다. 오크 대장과 호위대가 북쪽 성소를 지키고 있습니다.',
-    clearText: '오크 대장을 쓰러뜨렸습니다. 출구 계단으로 탈출하세요.',
+    intro: '여정의 마지막 성소입니다. 대장과 호위대가 북쪽 제단을 지키고 있습니다.',
+    clearText: '성소의 대장을 쓰러뜨렸습니다. 출구 계단으로 탈출하세요.',
     map: {
       ...keep,
       props: [
+        { key: 'mountain-2', x: -8.6, z: 8.6, radius: 1.15, rotationQuarter: 1 },
+        { key: 'rock-1', x: 8.4, z: 8.5, radius: 0.58, rotationQuarter: 0 },
         { key: 'banner', x: -4.8, z: -9.7, radius: 0.18, rotationQuarter: 0 },
         { key: 'banner', x: 4.8, z: -9.7, radius: 0.18, rotationQuarter: 0 },
         { key: 'column', x: -6.0, z: -3.4, radius: 0.44, rotationQuarter: 0 },
@@ -1351,6 +1554,18 @@ function isCustomMapMode() {
 
 function getActiveLevel() {
   return DUNGEON_LEVELS[state.levelIndex] ?? DUNGEON_LEVELS[0];
+}
+
+function applyLevelVisualTheme() {
+  const theme = JOURNEY_THEMES[getActiveLevel()?.biome ?? 'ruin'];
+  scene.background = new THREE.Color(theme.background);
+  scene.fog = new THREE.Fog(theme.fog, theme.fogNear, theme.fogFar);
+  ambientLight.color.set(theme.sky);
+  ambientLight.groundColor.set(theme.ground);
+  ambientLight.intensity = theme.ambientIntensity;
+  sunLight.color.set(theme.sun);
+  sunLight.intensity = theme.sunIntensity;
+  sunLight.position.set(...theme.sunPosition);
 }
 
 function applyLevelMap(levelIndex: number) {
@@ -1759,7 +1974,7 @@ async function copyTextToClipboard(value: string) {
 }
 
 function buildInviteLink(roomId: string) {
-  return new URL(`/games/dungeon-quest/play?room=${encodeURIComponent(roomId)}`, window.location.origin).toString();
+  return new URL(`${GAME_PLAY_PATH}?room=${encodeURIComponent(roomId)}`, window.location.origin).toString();
 }
 
 async function copyInviteLink() {
@@ -1776,8 +1991,8 @@ async function copyInviteLink() {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: 'Dungeon Quest 온라인 매치 초대',
-          text: 'Dungeon Quest 온라인 매치에 참가하세요.',
+          title: `${GAME_TITLE} 온라인 매치 초대`,
+          text: `${GAME_TITLE} 온라인 매치에 참가하세요.`,
           url: inviteLink,
         });
         flashP2pHelp('공유 메뉴를 열었습니다.');
@@ -2189,7 +2404,7 @@ function renderHostedRoomCard() {
     p2pState.hostedRoom ??
     ({
       id: p2pState.roomId,
-      gameSlug: 'dungeon-quest',
+      gameSlug: GAME_SLUG,
       title: p2pRoomNameEl.value.trim() || '내 방',
       hostDisplayName: '나',
       status: 'open',
@@ -2285,7 +2500,7 @@ async function refreshLobby(showOverlay = false) {
   setP2pStatus('loading-lobby', '활성 방 목록을 새로 불러오는 중입니다.');
   syncP2pUi();
   try {
-    p2pState.rooms = (await fetchLobbyRooms('dungeon-quest')).filter((room) => room.id !== p2pState.roomId);
+    p2pState.rooms = (await fetchLobbyRooms(GAME_SLUG)).filter((room) => room.id !== p2pState.roomId);
     if (p2pState.selectedRoomId && !p2pState.rooms.some((room) => room.id === p2pState.selectedRoomId)) {
       p2pState.selectedRoomId = p2pState.rooms[0]?.id ?? null;
     }
@@ -2456,7 +2671,7 @@ function setupDataChannel(channel: RTCDataChannel) {
     clearPeerDisconnectTimer();
     stopGuestRoomPoll();
     p2pState.connected = true;
-    setP2pStatus('connected', '연결되었습니다. 두 플레이어 모두 같은 던전에서 실시간으로 대전합니다.');
+    setP2pStatus('connected', '연결되었습니다. 두 플레이어 모두 같은 전장에서 실시간으로 대전합니다.');
     startDuelMode();
     enterCompactMatchModeUi();
     setOverlay('');
@@ -2486,7 +2701,7 @@ function attachPeerConnectionHandlers(peerConnection: RTCPeerConnection) {
     if (peerConnection.connectionState === 'connected') {
       clearPeerDisconnectTimer();
       p2pState.connected = true;
-      setP2pStatus('connected', '연결되었습니다. 두 플레이어 모두 같은 던전에서 실시간으로 대전합니다.');
+      setP2pStatus('connected', '연결되었습니다. 두 플레이어 모두 같은 전장에서 실시간으로 대전합니다.');
     } else if (peerConnection.connectionState === 'connecting') {
       setP2pStatus('connecting', '상대 응답을 확인 중입니다. 연결이 성립되면 자동으로 매치가 시작됩니다.');
     } else if (peerConnection.connectionState === 'disconnected') {
@@ -2531,7 +2746,7 @@ function createPeerConnection(role: Exclude<P2PRole, 'solo'>) {
   attachPeerConnectionHandlers(peerConnection);
 
   if (role === 'host') {
-    setupDataChannel(peerConnection.createDataChannel('dungeon-quest-duel'));
+    setupDataChannel(peerConnection.createDataChannel(`${GAME_SLUG}-duel`));
   }
 
   syncP2pUi();
@@ -2551,7 +2766,7 @@ async function createHostRoom() {
   }
 
   const response = await createLobbyRoom({
-    gameSlug: 'dungeon-quest',
+    gameSlug: GAME_SLUG,
     offer: JSON.stringify(localDescription.toJSON()),
     title: p2pRoomNameEl.value.trim() || undefined,
   });
@@ -3239,6 +3454,54 @@ function prepareTemplate(root: THREE.Group) {
   });
 }
 
+function stripSceneHelpers(root: THREE.Group) {
+  const removable: THREE.Object3D[] = [];
+  root.traverse((node) => {
+    if (node instanceof THREE.Light || node instanceof THREE.Camera) {
+      removable.push(node);
+    }
+  });
+
+  for (const node of removable) {
+    node.parent?.remove(node);
+  }
+}
+
+function stripNamedMeshes(root: THREE.Group, names: string[]) {
+  const nameSet = new Set(names);
+  const removable: THREE.Object3D[] = [];
+  root.traverse((node) => {
+    if (node instanceof THREE.Mesh && nameSet.has(node.name)) {
+      removable.push(node);
+    }
+  });
+
+  for (const node of removable) {
+    node.parent?.remove(node);
+  }
+}
+
+function normalizeBiomeTemplate(root: THREE.Group, config: { scale: number; stripMeshes?: string[] }) {
+  stripSceneHelpers(root);
+  if (config.stripMeshes?.length) {
+    stripNamedMeshes(root, config.stripMeshes);
+  }
+
+  root.scale.setScalar(config.scale);
+  root.updateMatrixWorld(true);
+
+  const box = new THREE.Box3().setFromObject(root);
+  const center = box.getCenter(new THREE.Vector3());
+  root.position.x -= center.x;
+  root.position.y -= box.min.y;
+  root.position.z -= center.z;
+
+  const wrapper = new THREE.Group();
+  wrapper.add(root);
+  prepareTemplate(wrapper);
+  return wrapper;
+}
+
 function sanitizeCharacterAnimations(animations: THREE.AnimationClip[]) {
   return animations.map((clip) => {
     if (clip.name === 'roll') {
@@ -3405,10 +3668,20 @@ async function loadTemplates() {
     }),
   );
 
+  await Promise.all(
+    (Object.keys(BIOME_MODEL_CONFIGS) as BiomeModelKey[]).map(async (key) => {
+      const root = await fbxLoader.loadAsync(biomeModelUrl(key));
+      templates.set(key, {
+        scene: normalizeBiomeTemplate(root, BIOME_MODEL_CONFIGS[key]),
+        animations: [],
+      });
+    }),
+  );
+
   await loadHumanRollAnimation().catch(() => undefined);
 }
 
-function cloneTemplate(name: ModelKey, skinned = false) {
+function cloneTemplate(name: TemplateKey, skinned = false) {
   const template = templates.get(name);
 
   if (!template) {
@@ -4134,6 +4407,31 @@ function getMapPointVector(point: GridPoint, y = 0) {
 
 function getPropRadius(key: PropConfig['key']) {
   switch (key) {
+    case 'forest-pack':
+    case 'grass-1':
+    case 'grass-2':
+    case 'plant-1':
+    case 'plant-4':
+    case 'plant-5':
+    case 'terrain-1':
+    case 'terrain-2':
+      return 0;
+    case 'tree-1':
+    case 'tree-2':
+    case 'tree-3':
+      return 0.62;
+    case 'bush-1':
+    case 'bush-2':
+    case 'bush-3':
+      return 0.42;
+    case 'rock-1':
+    case 'rock-3':
+    case 'rock-6':
+      return 0.58;
+    case 'mountain-1':
+    case 'mountain-2':
+    case 'mountain-3':
+      return 1.15;
     case 'banner':
       return 0.18;
     case 'column':
@@ -4396,6 +4694,26 @@ function applyMapToolAtPoint(point: THREE.Vector3, erase = false) {
     case 'stones':
     case 'wood-structure':
     case 'wood-support':
+    case 'forest-pack':
+    case 'tree-1':
+    case 'tree-2':
+    case 'tree-3':
+    case 'bush-1':
+    case 'bush-2':
+    case 'bush-3':
+    case 'grass-1':
+    case 'grass-2':
+    case 'plant-1':
+    case 'plant-4':
+    case 'plant-5':
+    case 'rock-1':
+    case 'rock-3':
+    case 'rock-6':
+    case 'mountain-1':
+    case 'mountain-2':
+    case 'mountain-3':
+    case 'terrain-1':
+    case 'terrain-2':
     case 'trap': {
       dungeonMapConfig.props = dungeonMapConfig.props.filter(
         (prop) => Math.abs(prop.x - snapped.x) > 0.001 || Math.abs(prop.z - snapped.z) > 0.001,
@@ -4450,6 +4768,7 @@ function applyMapToolAtPoint(point: THREE.Vector3, erase = false) {
 }
 
 function buildEnvironment() {
+  applyLevelVisualTheme();
   const world = new THREE.Group();
   obstacles.length = 0;
   wallObstacles.length = 0;
@@ -4832,7 +5151,7 @@ function syncHud() {
   if (gameMode === 'duel') {
     const remoteHealth = remotePeerAvatar ? Math.max(0, Math.round(remotePeerAvatar.health)) : 100;
     const remoteMana = remotePeerAvatar ? Math.max(0, Math.round(remotePeerAvatar.mana)) : 80;
-    objectiveEl.textContent = 'Dungeon Quest Duel';
+    objectiveEl.textContent = `${GAME_TITLE} 대전`;
     questEl.textContent = p2pState.connected
       ? `상대 HP ${remoteHealth}/100 · Mana ${remoteMana}/80`
       : '상대 연결 대기 중';
@@ -4849,7 +5168,7 @@ function syncHud() {
   const activeLevel = getActiveLevel();
   const levelLabel = isCustomMapMode()
     ? 'Custom'
-    : `${state.levelIndex + 1}/${DUNGEON_LEVELS.length} ${activeLevel?.name ?? '던전'}`;
+    : `${state.levelIndex + 1}/${DUNGEON_LEVELS.length} ${activeLevel?.name ?? '여정'}`;
   const stageText = aliveEnemies > 0
     ? `수호자 ${state.enemiesDefeated}/${enemies.length}`
     : !state.chestOpen
@@ -4858,7 +5177,7 @@ function syncHud() {
         ? '북쪽 계단으로 탈출'
         : '북쪽 게이트로 다음 층';
 
-  objectiveEl.textContent = `Dungeon Quest · ${levelLabel}`;
+  objectiveEl.textContent = `${GAME_TITLE} · ${levelLabel}`;
   questEl.textContent = `${stageText} · 코인 ${state.coinsCollected}/${coins.length}`;
   scoreEl.textContent = state.score.toLocaleString();
   timerEl.textContent = formatTime(state.totalTimeMs - state.elapsedMs);
@@ -6478,7 +6797,7 @@ async function initialize() {
   blockButton.disabled = true;
   syncSoundToggleUi();
   syncP2pUi();
-  setOverlay('던전 에셋과 씬을 준비하는 중입니다...');
+  setOverlay('여정 에셋과 씬을 준비하는 중입니다...');
   await loadTemplates();
   resetState();
   createSceneAssets();

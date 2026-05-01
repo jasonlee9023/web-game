@@ -48,6 +48,12 @@ type ActorIdentity = {
   displayName?: string;
 };
 
+const GAME_SLUG_ALIASES = new Map([['dungeon-quest', 'hero-journey']]);
+
+function canonicalGameSlug(slug: string) {
+  return GAME_SLUG_ALIASES.get(slug) ?? slug;
+}
+
 function multiplayerActorKey(identity: ActorIdentity) {
   return identity.userId ? `user:${identity.userId}` : `guest:${identity.guestId ?? 'unknown'}`;
 }
@@ -88,10 +94,11 @@ export class DataStore {
 
   listMultiplayerRooms(gameSlug: string, identity?: ActorIdentity) {
     this.pruneMultiplayerRooms();
+    const canonicalSlug = canonicalGameSlug(gameSlug);
     const actor = identity && (identity.userId || identity.guestId) ? multiplayerActorKey(identity) : null;
 
     return this.multiplayerRooms
-      .filter((room) => room.gameSlug === gameSlug && room.status === 'open' && (!actor || multiplayerHostActorKey(room) !== actor))
+      .filter((room) => room.gameSlug === canonicalSlug && room.status === 'open' && (!actor || multiplayerHostActorKey(room) !== actor))
       .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())
       .map((room) => this.roomToSummary(room));
   }
@@ -110,7 +117,7 @@ export class DataStore {
     const now = isoNow();
     const room: MultiplayerRoomEntity = {
       id: randomUUID(),
-      gameSlug: input.gameSlug,
+      gameSlug: game.slug,
       title: input.title?.trim() || `${identity.displayName ?? 'Host'}의 방`,
       hostUserId: identity.userId,
       hostGuestId: identity.guestId,
@@ -268,7 +275,7 @@ export class DataStore {
   }
 
   getGameBySlug(slug: string) {
-    return this.games.find((game) => game.slug === slug);
+    return this.games.find((game) => game.slug === canonicalGameSlug(slug));
   }
 
   getRelatedGames(slug: string) {
@@ -307,7 +314,7 @@ export class DataStore {
       throw new HttpError(404, 'Game not found');
     }
 
-    const session = this.sessions.find((item) => item.sessionId === payload.sessionId && item.gameSlug === gameSlug);
+    const session = this.sessions.find((item) => item.sessionId === payload.sessionId && item.gameSlug === game.slug);
 
     if (!session) {
       throw new HttpError(404, 'Play session not found');

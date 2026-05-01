@@ -36,7 +36,7 @@ const headline = computed(() => {
     return '아직 끝나지 않았습니다';
   }
   if (resultReason.value === 'escaped') {
-    return '던전 클리어';
+    return '여정 완료';
   }
   if (resultReason.value === 'timer') {
     return '시간 종료';
