@@ -53,7 +53,7 @@ defineExpose({
       class="game-iframe"
       :src="src"
       :title="title"
-      allow="autoplay; fullscreen"
+      allow="autoplay; fullscreen; clipboard-write"
     />
   </div>
 </template>

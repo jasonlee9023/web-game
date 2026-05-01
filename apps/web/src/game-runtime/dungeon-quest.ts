@@ -1674,7 +1674,7 @@ function flashP2pHelp(message: string, durationMs = 1_800) {
 }
 
 async function copyTextToClipboard(value: string) {
-  if (navigator.clipboard?.writeText) {
+  if (window.isSecureContext && navigator.clipboard?.writeText) {
     try {
       await navigator.clipboard.writeText(value);
       return;
@@ -1684,17 +1684,28 @@ async function copyTextToClipboard(value: string) {
   }
 
   const textarea = document.createElement('textarea');
+  const selection = document.getSelection();
+  const selectedRange = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
   textarea.value = value;
-  textarea.setAttribute('readonly', 'true');
   textarea.style.position = 'fixed';
-  textarea.style.opacity = '0';
-  textarea.style.pointerEvents = 'none';
+  textarea.style.top = '0';
+  textarea.style.left = '0';
+  textarea.style.width = '1px';
+  textarea.style.height = '1px';
+  textarea.style.border = '0';
+  textarea.style.padding = '0';
+  textarea.style.opacity = '0.01';
+  textarea.style.fontSize = '16px';
   document.body.append(textarea);
-  textarea.focus();
+  textarea.focus({ preventScroll: true });
   textarea.select();
   textarea.setSelectionRange(0, textarea.value.length);
   const copied = document.execCommand('copy');
   textarea.remove();
+  if (selection && selectedRange) {
+    selection.removeAllRanges();
+    selection.addRange(selectedRange);
+  }
 
   if (!copied) {
     throw new Error('Clipboard copy failed');
@@ -1711,10 +1722,24 @@ async function copyInviteLink() {
     return;
   }
 
+  const inviteLink = buildInviteLink(p2pState.roomId);
   try {
-    await copyTextToClipboard(buildInviteLink(p2pState.roomId));
+    await copyTextToClipboard(inviteLink);
     flashP2pHelp('초대 링크를 복사했습니다.');
   } catch {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Dungeon Quest 온라인 매치 초대',
+          text: 'Dungeon Quest 온라인 매치에 참가하세요.',
+          url: inviteLink,
+        });
+        flashP2pHelp('공유 메뉴를 열었습니다.');
+        return;
+      } catch {
+        // Keep the copy failure message when the share sheet is unavailable or canceled.
+      }
+    }
     flashP2pHelp('초대 링크 복사에 실패했습니다.');
   }
 }
@@ -6228,7 +6253,7 @@ function mountEvents() {
       setOverlay('로비 새로고침에 실패했습니다.');
     }
   });
-  p2pCopyInviteButtonEl.addEventListener('pointerdown', async (event) => {
+  p2pCopyInviteButtonEl.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
     await copyInviteLink();
