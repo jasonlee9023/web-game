@@ -43,6 +43,22 @@
         min-height: var(--app-height);
       }
 
+      #game-shell,
+      #game-shell * {
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      #game-shell input,
+      #game-shell textarea,
+      #game-shell select {
+        user-select: text;
+        -webkit-user-select: text;
+        -webkit-touch-callout: default;
+      }
+
       canvas {
         width: 100%;
         height: 100%;
