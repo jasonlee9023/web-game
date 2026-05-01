@@ -231,6 +231,104 @@
         display: none;
       }
 
+      .duel-result-panel {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: min(360px, calc(var(--app-width) - var(--edge-left) - var(--edge-right)));
+        display: grid;
+        gap: 12px;
+        padding: 18px;
+        border-radius: 20px;
+        border: 1px solid rgba(143, 215, 255, 0.22);
+        background:
+          radial-gradient(circle at 16% 0%, rgba(143, 215, 255, 0.24), transparent 36%),
+          linear-gradient(145deg, rgba(7, 16, 25, 0.94), rgba(17, 24, 39, 0.94));
+        box-shadow: 0 28px 80px rgba(0, 0, 0, 0.42);
+        transform: translate(-50%, -50%);
+        z-index: 34;
+        pointer-events: auto;
+        text-align: center;
+        backdrop-filter: blur(18px);
+      }
+
+      .duel-result-panel[hidden] {
+        display: none;
+      }
+
+      .duel-result-panel[data-result='win'] {
+        border-color: rgba(125, 255, 179, 0.3);
+        background:
+          radial-gradient(circle at 18% 0%, rgba(125, 255, 179, 0.24), transparent 36%),
+          linear-gradient(145deg, rgba(5, 24, 18, 0.94), rgba(18, 38, 31, 0.94));
+      }
+
+      .duel-result-panel[data-result='lose'] {
+        border-color: rgba(255, 125, 138, 0.3);
+      }
+
+      .duel-result-badge {
+        justify-self: center;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(245, 248, 255, 0.18);
+        color: #8fd7ff;
+        font-size: 0.7rem;
+        font-weight: 900;
+        letter-spacing: 0;
+      }
+
+      .duel-result-panel[data-result='win'] .duel-result-badge {
+        color: #7dffb3;
+      }
+
+      .duel-result-panel[data-result='lose'] .duel-result-badge {
+        color: #ff9aa5;
+      }
+
+      .duel-result-panel h2 {
+        margin: 0;
+        color: #ffffff;
+        font-size: 3rem;
+        line-height: 0.95;
+      }
+
+      .duel-result-panel p {
+        margin: 0;
+        color: rgba(245, 248, 255, 0.78);
+        font-size: 0.82rem;
+        line-height: 1.5;
+      }
+
+      .duel-result-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .duel-result-actions .p2p-button {
+        flex: 1;
+        min-width: 120px;
+      }
+
+      .duel-result-actions .p2p-button--accent {
+        border-color: rgba(125, 255, 179, 0.36);
+        background: #7dffb3;
+        color: #061713;
+      }
+
+      .duel-result-panel[data-result='lose'] .duel-result-actions .p2p-button--accent {
+        border-color: rgba(255, 154, 165, 0.38);
+        background: #ff9aa5;
+        color: #16080a;
+      }
+
+      @media (max-width: 430px) {
+        .duel-result-panel h2 {
+          font-size: 2.35rem;
+        }
+      }
+
       .p2p-connected-indicator {
         position: fixed;
         top: calc(var(--edge-top) + 52px);
@@ -1106,6 +1204,15 @@
       </div>
 
       <p id="status-text" class="status-toast"></p>
+      <div id="duel-result-panel" class="duel-result-panel" hidden aria-live="polite">
+        <span id="duel-result-badge" class="duel-result-badge">DUEL RESULT</span>
+        <h2 id="duel-result-title">승리</h2>
+        <p id="duel-result-summary">상대를 쓰러뜨렸습니다.</p>
+        <div class="duel-result-actions">
+          <button id="duel-rematch-button" class="p2p-button p2p-button--accent" type="button">다시 대전</button>
+          <button id="duel-lobby-button" class="p2p-button" type="button">온라인 메뉴</button>
+        </div>
+      </div>
       <div id="p2p-connected-indicator" class="p2p-connected-indicator" hidden aria-live="polite">
         <span class="p2p-connected-indicator__dot" aria-hidden="true"></span>
         <span id="p2p-connected-indicator-text">매치 참가됨</span>
@@ -1165,6 +1272,7 @@
             <button id="p2p-copy-invite-button" class="p2p-button p2p-button--compact" type="button" hidden>
               링크 복사
             </button>
+            <button id="p2p-rematch-button" class="p2p-button p2p-button--accent" type="button" hidden>다시 대전</button>
             <button id="p2p-disconnect-button" class="p2p-button p2p-button--danger" type="button">연결 종료</button>
           </div>
 

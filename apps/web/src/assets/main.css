@@ -976,20 +976,135 @@ h3,
 .modal-card {
   width: min(520px, calc(100vw - 32px));
   padding: 24px;
+  color: var(--text);
 }
 
 .gameover-card {
   display: grid;
   gap: 18px;
+  overflow: hidden;
+  border-color: rgba(143, 215, 255, 0.18);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(143, 215, 255, 0.24), transparent 34%),
+    radial-gradient(circle at 84% 14%, rgba(238, 107, 77, 0.18), transparent 32%),
+    linear-gradient(145deg, #08111c 0%, #111827 62%, #1b2433 100%);
+  color: #f6f8fb;
+  box-shadow: 0 28px 84px rgba(0, 0, 0, 0.42);
+}
+
+.gameover-card[data-result='victory'] {
+  border-color: rgba(125, 255, 179, 0.28);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(125, 255, 179, 0.24), transparent 34%),
+    radial-gradient(circle at 86% 16%, rgba(255, 226, 122, 0.2), transparent 30%),
+    linear-gradient(145deg, #061713 0%, #10251f 56%, #1d2a25 100%);
+}
+
+.gameover-card[data-result='defeat'] {
+  border-color: rgba(255, 125, 138, 0.28);
+}
+
+.gameover-badge {
+  width: fit-content;
+  padding: 7px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(246, 248, 251, 0.18);
+  background: rgba(246, 248, 251, 0.1);
+  color: #8fd7ff;
+  font-size: 0.74rem;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.gameover-card[data-result='victory'] .gameover-badge {
+  color: #7dffb3;
+}
+
+.gameover-card[data-result='defeat'] .gameover-badge {
+  color: #ff9aa5;
+}
+
+.gameover-heading {
+  display: grid;
+  gap: 8px;
+}
+
+.gameover-heading .eyebrow {
+  margin: 0;
+  color: rgba(143, 215, 255, 0.86);
+}
+
+.gameover-heading h3 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 3rem;
+  line-height: 0.95;
+}
+
+.gameover-heading p {
+  margin: 0;
+  color: rgba(246, 248, 251, 0.78);
+  line-height: 1.55;
 }
 
 .gameover-score {
   display: grid;
   gap: 6px;
   padding: 18px;
-  border: 1px solid rgba(15, 143, 133, 0.16);
+  border: 1px solid rgba(246, 248, 251, 0.14);
   border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, rgba(15, 143, 133, 0.1), rgba(238, 107, 77, 0.1));
+  background: rgba(246, 248, 251, 0.08);
+}
+
+.gameover-score span,
+.gameover-card .stats-grid span {
+  color: rgba(246, 248, 251, 0.68);
+}
+
+.gameover-score strong {
+  color: #ffffff;
+  font-size: 3.25rem;
+  line-height: 1;
+}
+
+.gameover-card .stats-grid article {
+  border-color: rgba(246, 248, 251, 0.12);
+  background: rgba(246, 248, 251, 0.06);
+}
+
+.gameover-card .stats-grid strong {
+  color: #f6f8fb;
+}
+
+.gameover-card .soft-banner {
+  background: rgba(143, 215, 255, 0.1);
+  color: rgba(246, 248, 251, 0.82);
+}
+
+.gameover-card .pill-button {
+  background: #8fd7ff;
+  color: #071019;
+  box-shadow: 0 14px 34px rgba(40, 170, 230, 0.24);
+}
+
+.gameover-card .pill-button.quiet {
+  border-color: rgba(246, 248, 251, 0.18);
+  background: rgba(246, 248, 251, 0.08);
+  color: #f6f8fb;
+}
+
+.gameover-card .text-link {
+  color: #8fd7ff;
+}
+
+@media (max-width: 520px) {
+  .gameover-heading h3 {
+    font-size: 2.35rem;
+  }
+
+  .gameover-score strong {
+    font-size: 2.5rem;
+  }
 }
 
 .stats-grid {

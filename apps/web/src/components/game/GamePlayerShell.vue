@@ -501,6 +501,7 @@ onBeforeUnmount(() => {
       :my-best="playSessionStore.myBest?.score"
       :rank="latestRank"
       :signed-in="authStore.isAuthenticated"
+      :metadata="pendingPayload?.metadata ?? playSessionStore.lastScore?.metadata"
       :reward-available="rewardOffered"
       :reward-loading="rewardLoading"
       :finalized="!rewardOffered"

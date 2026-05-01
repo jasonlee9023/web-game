@@ -39,6 +39,12 @@ const soundToggleNode = document.querySelector<HTMLButtonElement>('#sound-toggle
 const objectiveNode = document.querySelector<HTMLElement>('#objective-text');
 const questNode = document.querySelector<HTMLElement>('#quest-text');
 const statusNode = document.querySelector<HTMLElement>('#status-text');
+const duelResultPanelNode = document.querySelector<HTMLElement>('#duel-result-panel');
+const duelResultBadgeNode = document.querySelector<HTMLElement>('#duel-result-badge');
+const duelResultTitleNode = document.querySelector<HTMLElement>('#duel-result-title');
+const duelResultSummaryNode = document.querySelector<HTMLElement>('#duel-result-summary');
+const duelRematchButtonNode = document.querySelector<HTMLButtonElement>('#duel-rematch-button');
+const duelLobbyButtonNode = document.querySelector<HTMLButtonElement>('#duel-lobby-button');
 const healthFillNode = document.querySelector<HTMLElement>('#health-fill');
 const healthLabelNode = document.querySelector<HTMLElement>('#health-label');
 const manaFillNode = document.querySelector<HTMLElement>('#mana-fill');
@@ -58,6 +64,7 @@ const p2pJoinButtonNode = document.querySelector<HTMLButtonElement>('#p2p-join-b
 const p2pDisconnectButtonNode = document.querySelector<HTMLButtonElement>('#p2p-disconnect-button');
 const p2pRefreshButtonNode = document.querySelector<HTMLButtonElement>('#p2p-refresh-button');
 const p2pCopyInviteButtonNode = document.querySelector<HTMLButtonElement>('#p2p-copy-invite-button');
+const p2pRematchButtonNode = document.querySelector<HTMLButtonElement>('#p2p-rematch-button');
 const p2pRoomNameGroupNode = document.querySelector<HTMLElement>('#p2p-room-name-group');
 const p2pLobbyToolsNode = document.querySelector<HTMLElement>('#p2p-lobby-tools');
 const p2pRoomNameNode = document.querySelector<HTMLInputElement>('#p2p-room-name');
@@ -90,6 +97,12 @@ if (
   !objectiveNode ||
   !questNode ||
   !statusNode ||
+  !duelResultPanelNode ||
+  !duelResultBadgeNode ||
+  !duelResultTitleNode ||
+  !duelResultSummaryNode ||
+  !duelRematchButtonNode ||
+  !duelLobbyButtonNode ||
   !healthFillNode ||
   !healthLabelNode ||
   !manaFillNode ||
@@ -109,6 +122,7 @@ if (
   !p2pDisconnectButtonNode ||
   !p2pRefreshButtonNode ||
   !p2pCopyInviteButtonNode ||
+  !p2pRematchButtonNode ||
   !p2pRoomNameGroupNode ||
   !p2pLobbyToolsNode ||
   !p2pRoomNameNode ||
@@ -143,6 +157,12 @@ const soundToggleButton = soundToggleNode;
 const objectiveEl = objectiveNode;
 const questEl = questNode;
 const statusEl = statusNode;
+const duelResultPanelEl = duelResultPanelNode;
+const duelResultBadgeEl = duelResultBadgeNode;
+const duelResultTitleEl = duelResultTitleNode;
+const duelResultSummaryEl = duelResultSummaryNode;
+const duelRematchButtonEl = duelRematchButtonNode;
+const duelLobbyButtonEl = duelLobbyButtonNode;
 const healthFillEl = healthFillNode;
 const healthLabelEl = healthLabelNode;
 const manaFillEl = manaFillNode;
@@ -162,6 +182,7 @@ const p2pJoinButtonEl = p2pJoinButtonNode;
 const p2pDisconnectButtonEl = p2pDisconnectButtonNode;
 const p2pRefreshButtonEl = p2pRefreshButtonNode;
 const p2pCopyInviteButtonEl = p2pCopyInviteButtonNode;
+const p2pRematchButtonEl = p2pRematchButtonNode;
 const p2pRoomNameGroupEl = p2pRoomNameGroupNode;
 const p2pLobbyToolsEl = p2pLobbyToolsNode;
 const p2pRoomNameEl = p2pRoomNameNode;
@@ -458,6 +479,12 @@ type P2PMessage =
       payload: {
         result: 'win' | 'lose';
       };
+    }
+  | {
+      type: 'REMATCH_REQUEST';
+    }
+  | {
+      type: 'REMATCH_ACCEPT';
     };
 
 type RemotePeerAvatar = {
@@ -494,6 +521,8 @@ type P2PState = {
   lobbyRefreshTimerId: number | null;
   peerDisconnectTimerId: number | null;
   pendingRemoteAnswer: string | null;
+  rematchRequested: boolean;
+  peerRematchRequested: boolean;
 };
 
 type MapTool =
@@ -827,6 +856,8 @@ const p2pState: P2PState = {
   lobbyRefreshTimerId: null,
   peerDisconnectTimerId: null,
   pendingRemoteAnswer: null,
+  rematchRequested: false,
+  peerRematchRequested: false,
 };
 
 const state: GameState = {
@@ -1655,6 +1686,21 @@ function setOverlay(message: string) {
   statusEl.textContent = message;
 }
 
+function hideDuelResultPanel() {
+  duelResultPanelEl.hidden = true;
+}
+
+function showDuelResultPanel(result: 'win' | 'lose') {
+  duelResultPanelEl.hidden = false;
+  duelResultPanelEl.dataset.result = result;
+  duelResultBadgeEl.textContent = result === 'win' ? 'VICTORY' : 'DEFEAT';
+  duelResultTitleEl.textContent = result === 'win' ? '승리' : '패배';
+  duelResultSummaryEl.textContent =
+    result === 'win'
+      ? '상대를 제압했습니다. 같은 연결로 바로 재대전을 요청할 수 있습니다.'
+      : '이번 라운드는 패배했습니다. 재대전을 요청해 바로 다시 붙어보세요.';
+}
+
 function syncP2pHelpText() {
   p2pHelpTextEl.textContent = p2pHelpFlashMessage ?? p2pState.helpText;
 }
@@ -1843,6 +1889,7 @@ function enterCompactMatchModeUi() {
 function syncP2pUi() {
   const canCopyInvite = p2pState.role === 'host' && p2pState.roomId !== null;
   const isRoomContext = p2pState.roomId !== null;
+  const canRematch = p2pState.connected && gameMode === 'duel' && state.finished;
   p2pPanelEl.dataset.collapsed = String(p2pState.collapsed);
   p2pPanelEl.dataset.context = isRoomContext ? 'room' : 'lobby';
   p2pToggleEl.textContent = p2pState.collapsed ? '열기' : '닫기';
@@ -1855,6 +1902,20 @@ function syncP2pUi() {
   p2pLobbyToolsEl.hidden = isRoomContext;
   p2pCopyInviteButtonEl.hidden = !canCopyInvite;
   p2pCopyInviteButtonEl.disabled = !canCopyInvite || p2pState.status === 'creating-room';
+  const isWaitingForRematch = p2pState.rematchRequested && !p2pState.peerRematchRequested;
+  p2pRematchButtonEl.hidden = !canRematch;
+  p2pRematchButtonEl.disabled = !canRematch || isWaitingForRematch;
+  p2pRematchButtonEl.textContent = p2pState.peerRematchRequested
+    ? '재대전 수락'
+    : p2pState.rematchRequested
+      ? '요청 대기중'
+      : '다시 대전';
+  duelRematchButtonEl.textContent = p2pState.peerRematchRequested
+    ? '재대전 수락'
+    : p2pState.rematchRequested
+      ? '요청 대기중'
+      : '다시 대전';
+  duelRematchButtonEl.disabled = !canRematch || isWaitingForRematch;
   p2pDisconnectButtonEl.textContent =
     p2pState.status === 'waiting-peer' ? '대기 취소' : p2pState.connected ? '매치 종료' : '연결 종료';
   syncP2pConnectedIndicator();
@@ -1983,6 +2044,8 @@ function clearP2pRuntimeState() {
   p2pState.selectedRoomId = null;
   p2pState.hostHeartbeatFailures = 0;
   p2pState.pendingRemoteAnswer = null;
+  p2pState.rematchRequested = false;
+  p2pState.peerRematchRequested = false;
 }
 
 function clearPeerDisconnectTimer() {
@@ -2357,6 +2420,30 @@ function handleP2pMessage(message: P2PMessage) {
       } else if (message.payload.result === 'win' && !state.finished) {
         finishDuel('lose');
       }
+      return;
+    case 'REMATCH_REQUEST':
+      if (!state.finished) {
+        return;
+      }
+
+      if (p2pState.rematchRequested) {
+        acceptRematch();
+        return;
+      }
+
+      p2pState.peerRematchRequested = true;
+      revealP2pPanel();
+      setP2pStatus('connected', '상대가 재대전을 요청했습니다. 수락하면 같은 연결로 새 라운드가 시작됩니다.');
+      duelResultSummaryEl.textContent = '상대가 재대전을 요청했습니다. 다시 대전을 누르면 즉시 새 라운드가 시작됩니다.';
+      setOverlay('상대가 재대전을 요청했습니다.');
+      syncP2pUi();
+      return;
+    case 'REMATCH_ACCEPT':
+      if (!state.finished) {
+        return;
+      }
+
+      restartDuelMatch();
       return;
     default:
       return;
@@ -4570,6 +4657,7 @@ function resetState(options: { preserveLevel?: boolean; preserveMap?: boolean } 
     applyLevelMap(state.levelIndex);
   }
   updateVirtualJoystickUi();
+  hideDuelResultPanel();
   setOverlay('');
 }
 
@@ -4627,6 +4715,8 @@ function ensureRemotePeerAvatar() {
 function startDuelMode() {
   gameMode = 'duel';
   dungeonMapConfig = cloneMapConfig(DUEL_MAP_CONFIG);
+  p2pState.rematchRequested = false;
+  p2pState.peerRematchRequested = false;
   resetState({ preserveMap: true });
   createSceneAssets();
   state.started = true;
@@ -4655,6 +4745,58 @@ function startDuelMode() {
   syncHud();
 }
 
+function restartDuelMatch() {
+  if (!p2pState.connected || !p2pState.dataChannel || p2pState.dataChannel.readyState !== 'open') {
+    setOverlay('상대 연결이 끊겨 재대전을 시작할 수 없습니다.');
+    return;
+  }
+
+  startDuelMode();
+  enterCompactMatchModeUi();
+  setP2pStatus('connected', '재대전이 시작되었습니다. 같은 연결로 새 라운드를 진행합니다.');
+  setOverlay('재대전 시작!');
+  sendDuelSnapshot();
+  syncP2pUi();
+}
+
+function acceptRematch() {
+  if (!p2pState.connected) {
+    return;
+  }
+
+  if (!sendP2pMessage({ type: 'REMATCH_ACCEPT' })) {
+    setOverlay('상대 연결이 끊겨 재대전을 시작할 수 없습니다.');
+    syncP2pUi();
+    return;
+  }
+
+  restartDuelMatch();
+}
+
+function requestRematch() {
+  if (!p2pState.connected || gameMode !== 'duel' || !state.finished) {
+    flashP2pHelp('매치가 끝난 뒤 같은 연결에서 재대전을 요청할 수 있습니다.');
+    return;
+  }
+
+  if (p2pState.peerRematchRequested) {
+    acceptRematch();
+    return;
+  }
+
+  if (!sendP2pMessage({ type: 'REMATCH_REQUEST' })) {
+    setOverlay('상대 연결이 끊겨 재대전을 요청할 수 없습니다.');
+    syncP2pUi();
+    return;
+  }
+
+  p2pState.rematchRequested = true;
+  setP2pStatus('connected', '재대전을 요청했습니다. 상대 수락을 기다리는 중입니다.');
+  duelResultSummaryEl.textContent = '재대전을 요청했습니다. 상대가 수락하면 바로 새 라운드가 시작됩니다.';
+  flashP2pHelp('재대전 요청을 보냈습니다.');
+  syncP2pUi();
+}
+
 function finishDuel(result: 'win' | 'lose') {
   if (gameMode !== 'duel' || state.finished) {
     return;
@@ -4664,6 +4806,8 @@ function finishDuel(result: 'win' | 'lose') {
   state.finished = true;
   state.finalized = true;
   pursuedRemotePeer = false;
+  p2pState.rematchRequested = false;
+  p2pState.peerRematchRequested = false;
   clearMagicProjectiles();
   void sendP2pMessage({
     type: 'RESULT',
@@ -4674,11 +4818,14 @@ function finishDuel(result: 'win' | 'lose') {
   if (result === 'win') {
     playCue('victory');
     addScore(1500);
-    setOverlay('승리했습니다. 상대를 쓰러뜨렸습니다.');
+    setOverlay('승리했습니다. 다시 대전을 요청할 수 있습니다.');
   } else {
     playCue('defeat');
-    setOverlay('패배했습니다. 체력이 모두 소진되었습니다.');
+    setOverlay('패배했습니다. 다시 대전을 요청할 수 있습니다.');
   }
+  showDuelResultPanel(result);
+  revealP2pPanel();
+  syncP2pUi();
 }
 
 function syncHud() {
@@ -6257,6 +6404,24 @@ function mountEvents() {
     event.preventDefault();
     event.stopPropagation();
     await copyInviteLink();
+  });
+  p2pRematchButtonEl.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void unlockAudio();
+    requestRematch();
+  });
+  duelRematchButtonEl.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void unlockAudio();
+    requestRematch();
+  });
+  duelLobbyButtonEl.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    revealP2pPanel();
+    setP2pCollapsed(false);
   });
   p2pDisconnectButtonEl.addEventListener('pointerdown', (event) => {
     event.preventDefault();
