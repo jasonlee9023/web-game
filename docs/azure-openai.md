@@ -35,19 +35,22 @@ Defaults:
 
 - Resource group: `rg-leeminsoft-prod-krc`
 - Location: `koreacentral`
-- Azure OpenAI account: `oai-gamezip-prod-krc`
-- Deployment: `hero-level-planner`
-- Model: `gpt-4o-mini`
-- Model version: `2024-07-18`
+- Azure OpenAI account: `routineforall-openai-prod`
+- Deployment: `gpt-5.6-sol`
+- Model: `gpt-5.6-sol`
+- Model version: `2026-07-09`
+- Fallback deployment: `gpt-5.4-mini`
+
+The script tries the latest configured model first. If the subscription has no quota for that model but the fallback deployment already exists, it configures the app to use the fallback deployment instead.
 
 Override any of these with environment variables:
 
 ```bash
 AZURE_OPENAI_LOCATION=eastus \
 AZURE_OPENAI_ACCOUNT_NAME=oai-gamezip-prod \
-AZURE_OPENAI_DEPLOYMENT=hero-level-planner \
-AZURE_OPENAI_MODEL_NAME=gpt-4o-mini \
-AZURE_OPENAI_MODEL_VERSION=2024-07-18 \
+AZURE_OPENAI_DEPLOYMENT=gpt-5.6-sol \
+AZURE_OPENAI_MODEL_NAME=gpt-5.6-sol \
+AZURE_OPENAI_MODEL_VERSION=2026-07-09 \
 npm run azure:openai:setup
 ```
 

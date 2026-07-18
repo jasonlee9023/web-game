@@ -458,7 +458,7 @@ async function requestAzureOpenAiPlan(prompt: string, image: LevelReferenceImage
         },
       ],
       temperature: 0.85,
-      max_tokens: 1800,
+      max_completion_tokens: 1800,
       response_format: {
         type: 'json_object',
       },
