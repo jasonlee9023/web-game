@@ -12,7 +12,7 @@ CERTBOT_EMAIL="${CERTBOT_EMAIL:-}"
 
 if command -v apt-get >/dev/null 2>&1; then
   sudo apt-get update
-  sudo apt-get install -y ca-certificates curl git nginx openssl
+  sudo apt-get install -y ca-certificates curl git nginx openssl logrotate
 
   if ! command -v node >/dev/null 2>&1 || ! node -e "process.exit(Number(process.versions.node.split('.')[0]) >= ${NODE_MAJOR} ? 0 : 1)"; then
     curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | sudo -E bash -
@@ -21,6 +21,14 @@ if command -v apt-get >/dev/null 2>&1; then
 fi
 
 sudo npm install -g pm2
+pm2 install pm2-logrotate >/dev/null 2>&1 || pm2 module:install pm2-logrotate >/dev/null 2>&1 || true
+pm2 set pm2-logrotate:max_size 10M >/dev/null
+pm2 set pm2-logrotate:retain 7 >/dev/null
+pm2 set pm2-logrotate:compress true >/dev/null
+pm2 set pm2-logrotate:dateFormat YYYY-MM-DD_HH-mm-ss >/dev/null
+pm2 set pm2-logrotate:workerInterval 30 >/dev/null
+pm2 set pm2-logrotate:rotateInterval '0 0 * * *' >/dev/null
+pm2 set pm2-logrotate:rotateModule true >/dev/null
 sudo mkdir -p "${APP_DIR}"
 sudo chown -R "$(id -un):$(id -gn)" "${APP_DIR}"
 
@@ -40,6 +48,9 @@ PORT=${APP_PORT}
 WEB_ORIGIN=${WEB_ORIGIN}
 WEB_DIST_DIR=apps/web/dist
 SERVE_WEB=true
+LOG_LEVEL=warn
+LOG_ERROR_STACKS=false
+LOG_MAX_META_CHARS=2000
 JWT_ACCESS_SECRET=$(openssl rand -hex 32)
 JWT_REFRESH_SECRET=$(openssl rand -hex 32)
 # ADSENSE_CLIENT=ca-pub-0000000000000000
@@ -68,6 +79,18 @@ server {
     server_name gamezip.kr www.gamezip.kr;
 
     client_max_body_size 10m;
+    access_log /var/log/nginx/gamezip.access.log combined buffer=64k flush=5m;
+    error_log /var/log/nginx/gamezip.error.log warn;
+
+    location = /health {
+        access_log off;
+        proxy_pass http://127.0.0.1:${APP_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
 
     location / {
         proxy_pass http://127.0.0.1:${APP_PORT};

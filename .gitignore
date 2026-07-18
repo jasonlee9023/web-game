@@ -7,3 +7,14 @@ dist
 coverage
 apps/web/.vite
 *.log
+.azure-deploy
+*.zip
+data/*.sqlite
+data/*.sqlite-*
+apps/api/data/*.sqlite
+apps/api/data/*.sqlite-*
+.codex
+.playwright-mcp
+.unity
+tmp
+hero-journey-*.png

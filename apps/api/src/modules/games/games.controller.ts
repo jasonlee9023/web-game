@@ -36,4 +36,8 @@ export const gamesController = {
       ok(gamesService.getRelated(req.params.slug.toString()).map((game) => withResolvedAssetOrigins(game, webOrigin))),
     );
   },
+
+  heroJourneyLevels(req: Request, res: Response) {
+    res.json(ok(gamesService.getHeroJourneyLevels(req.params.slug.toString())));
+  },
 };

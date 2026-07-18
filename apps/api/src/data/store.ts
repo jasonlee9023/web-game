@@ -6,6 +6,9 @@ import type {
   DashboardSummary,
   GameAnalyticsEvent,
   GameCatalogItem,
+  HeroJourneyLevelCreateInput,
+  HeroJourneyLevelSnapshot,
+  HeroJourneyMapConfig,
   JoinMultiplayerRoomInput,
   MultiplayerRoomSignalResponse,
   MultiplayerRoomSummary,
@@ -18,7 +21,18 @@ import type {
 
 import { isoNow, isWithinPeriod } from '../utils/dates';
 import { HttpError } from '../utils/http';
-import { seedAdSlots, seedEvents, seedGames, seedScores, seedUsers, type GameEntity, type SessionEntity, type UserEntity } from './seed';
+import {
+  seedAdSlots,
+  seedEvents,
+  seedGames,
+  seedHeroJourneyLevels,
+  seedScores,
+  seedUsers,
+  type GameEntity,
+  type SessionEntity,
+  type UserEntity,
+} from './seed';
+import { database } from './database';
 
 function actorKey(score: ScoreRecord) {
   return score.userId ? `user:${score.userId}` : `guest:${score.guestId ?? 'unknown'}`;
@@ -48,7 +62,20 @@ type ActorIdentity = {
   displayName?: string;
 };
 
+type HeroJourneyLevelDefinition = Omit<HeroJourneyLevelSnapshot, 'map' | 'customized' | 'updatedAt'>;
+
 const GAME_SLUG_ALIASES = new Map([['dungeon-quest', 'hero-journey']]);
+
+function slugifyLevelId(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/['"]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+}
 
 function canonicalGameSlug(slug: string) {
   return GAME_SLUG_ALIASES.get(slug) ?? slug;
@@ -66,26 +93,78 @@ function multiplayerHostActorKey(room: MultiplayerRoomEntity) {
 }
 
 export class DataStore {
-  users: UserEntity[] = structuredClone(seedUsers);
+  users: UserEntity[] = database.get<UserEntity[]>('users', seedUsers);
 
-  games: GameEntity[] = structuredClone(seedGames);
+  games: GameEntity[] = database.get<GameEntity[]>('games', seedGames);
 
-  sessions: SessionEntity[] = [];
+  sessions: SessionEntity[] = database.get<SessionEntity[]>('sessions', []);
 
-  scores: ScoreRecord[] = structuredClone(seedScores);
+  scores: ScoreRecord[] = database.get<ScoreRecord[]>('scores', seedScores);
 
-  adSlots: AdSlotConfig[] = structuredClone(seedAdSlots);
+  adSlots: AdSlotConfig[] = database.get<AdSlotConfig[]>('adSlots', seedAdSlots);
 
-  events: GameAnalyticsEvent[] = structuredClone(seedEvents);
+  events: GameAnalyticsEvent[] = database.get<GameAnalyticsEvent[]>('events', seedEvents);
 
-  refreshTokens = new Map<string, string>();
+  refreshTokens = new Map<string, string>(Object.entries(database.get<Record<string, string>>('refreshTokens', {})));
 
   multiplayerRooms: MultiplayerRoomEntity[] = [];
+
+  heroJourneyLevelMaps = new Map<string, { map: HeroJourneyMapConfig; updatedAt: string }>(
+    Object.entries(database.get<Record<string, { map: HeroJourneyMapConfig; updatedAt: string }>>('heroJourneyLevelMaps', {})),
+  );
+
+  heroJourneyCustomLevels: HeroJourneyLevelDefinition[] = database.get<HeroJourneyLevelDefinition[]>('heroJourneyCustomLevels', []);
 
   constructor() {
     setInterval(() => {
       this.pruneMultiplayerRooms();
     }, 5_000).unref();
+  }
+
+  persistUsers() {
+    database.set('users', this.users);
+  }
+
+  saveRefreshToken(token: string, userId: string) {
+    this.refreshTokens.set(token, userId);
+    this.persistRefreshTokens();
+  }
+
+  hasRefreshToken(token: string) {
+    return this.refreshTokens.has(token);
+  }
+
+  deleteRefreshToken(token: string) {
+    this.refreshTokens.delete(token);
+    this.persistRefreshTokens();
+  }
+
+  private persistGames() {
+    database.set('games', this.games);
+  }
+
+  private persistSessions() {
+    database.set('sessions', this.sessions);
+  }
+
+  private persistScores() {
+    database.set('scores', this.scores);
+  }
+
+  private persistEvents() {
+    database.set('events', this.events);
+  }
+
+  private persistRefreshTokens() {
+    database.set('refreshTokens', Object.fromEntries(this.refreshTokens));
+  }
+
+  private persistHeroJourneyLevelMaps() {
+    database.set('heroJourneyLevelMaps', Object.fromEntries(this.heroJourneyLevelMaps));
+  }
+
+  private persistHeroJourneyCustomLevels() {
+    database.set('heroJourneyCustomLevels', this.heroJourneyCustomLevels);
   }
 
   getPublishedGames() {
@@ -289,6 +368,107 @@ export class DataStore {
       .filter((value): value is GameEntity => Boolean(value));
   }
 
+  listHeroJourneyLevels() {
+    return this.getHeroJourneyLevelDefinitions().map((level) => this.buildHeroJourneyLevelSnapshot(level.id));
+  }
+
+  createHeroJourneyLevel(input: HeroJourneyLevelCreateInput) {
+    const now = isoNow();
+    const id = this.createUniqueHeroJourneyLevelId(input.id ?? input.name.en ?? input.name.ko);
+    const name = {
+      ko: input.name.ko.trim(),
+      en: input.name.en.trim(),
+    };
+    const definition: HeroJourneyLevelDefinition = {
+      id,
+      name,
+      biome: input.biome ?? 'ruin',
+      quest: input.quest ?? {
+        ko: `${name.ko}의 수호자를 정리하고 보물상자를 여세요.`,
+        en: `Clear the guardians in ${name.en} and open the treasure chest.`,
+      },
+      intro: input.intro ?? {
+        ko: `${name.ko} 레벨입니다. 배치된 몹을 정리하고 다음 길을 여세요.`,
+        en: `${name.en}. Clear the placed enemies and open the next route.`,
+      },
+      clearText: input.clearText ?? {
+        ko: `${name.ko} 클리어. 다음 레벨로 이동합니다.`,
+        en: `${name.en} cleared. Moving to the next level.`,
+      },
+      custom: true,
+      createdAt: now,
+    };
+
+    this.heroJourneyCustomLevels.push(definition);
+    this.persistHeroJourneyCustomLevels();
+
+    if (input.map) {
+      this.heroJourneyLevelMaps.set(id, {
+        map: structuredClone(input.map),
+        updatedAt: now,
+      });
+      this.persistHeroJourneyLevelMaps();
+    }
+
+    return this.buildHeroJourneyLevelSnapshot(id);
+  }
+
+  saveHeroJourneyLevel(levelId: string, map: HeroJourneyMapConfig) {
+    this.assertHeroJourneyLevel(levelId);
+    this.heroJourneyLevelMaps.set(levelId, {
+      map: structuredClone(map),
+      updatedAt: isoNow(),
+    });
+    this.persistHeroJourneyLevelMaps();
+    return this.buildHeroJourneyLevelSnapshot(levelId);
+  }
+
+  resetHeroJourneyLevel(levelId: string) {
+    this.assertHeroJourneyLevel(levelId);
+    this.heroJourneyLevelMaps.delete(levelId);
+    this.persistHeroJourneyLevelMaps();
+    return this.buildHeroJourneyLevelSnapshot(levelId);
+  }
+
+  private assertHeroJourneyLevel(levelId: string) {
+    if (!this.getHeroJourneyLevelDefinitions().some((level) => level.id === levelId)) {
+      throw new HttpError(404, 'Hero Journey level not found');
+    }
+  }
+
+  private getHeroJourneyLevelDefinitions(): HeroJourneyLevelDefinition[] {
+    return [...seedHeroJourneyLevels, ...this.heroJourneyCustomLevels];
+  }
+
+  private createUniqueHeroJourneyLevelId(value: string) {
+    const baseId = slugifyLevelId(value) || 'custom-level';
+    const existingIds = new Set(this.getHeroJourneyLevelDefinitions().map((level) => level.id));
+    let candidate = baseId;
+    let suffix = 2;
+
+    while (existingIds.has(candidate)) {
+      candidate = `${baseId}-${suffix}`;
+      suffix += 1;
+    }
+
+    return candidate;
+  }
+
+  private buildHeroJourneyLevelSnapshot(levelId: string): HeroJourneyLevelSnapshot {
+    const level = this.getHeroJourneyLevelDefinitions().find((candidate) => candidate.id === levelId);
+    if (!level) {
+      throw new HttpError(404, 'Hero Journey level not found');
+    }
+
+    const saved = this.heroJourneyLevelMaps.get(levelId);
+    return {
+      ...level,
+      map: saved ? structuredClone(saved.map) : undefined,
+      customized: Boolean(saved),
+      updatedAt: saved?.updatedAt,
+    };
+  }
+
   createSession(input: Omit<SessionEntity, 'sessionId' | 'seed' | 'startedAt' | 'status' | 'scoreSubmitted'>) {
     const session: SessionEntity = {
       sessionId: randomUUID(),
@@ -304,6 +484,7 @@ export class DataStore {
       userAgentHash: input.userAgentHash,
     };
     this.sessions.unshift(session);
+    this.persistSessions();
     return session;
   }
 
@@ -358,6 +539,9 @@ export class DataStore {
     this.scores.unshift(record);
     game.playCount += 1;
     game.bestScore = Math.max(game.bestScore, payload.score);
+    this.persistSessions();
+    this.persistScores();
+    this.persistGames();
 
     return record;
   }
@@ -477,6 +661,7 @@ export class DataStore {
       ...event,
     };
     this.events.unshift(record);
+    this.persistEvents();
     return record;
   }
 
@@ -496,6 +681,7 @@ export class DataStore {
     };
 
     this.games.unshift(entity);
+    this.persistGames();
     return entity;
   }
 
@@ -505,6 +691,7 @@ export class DataStore {
       throw new HttpError(404, 'Game not found');
     }
     this.games[index] = { ...this.games[index], ...patch };
+    this.persistGames();
     return this.games[index];
   }
 

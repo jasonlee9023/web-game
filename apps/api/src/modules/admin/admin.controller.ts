@@ -23,4 +23,24 @@ export const adminController = {
   publishGame(req: Request, res: Response) {
     res.json(ok(adminService.publishGame(req.params.id.toString())));
   },
+
+  heroJourneyLevels(_req: Request, res: Response) {
+    res.json(ok(adminService.listHeroJourneyLevels()));
+  },
+
+  createHeroJourneyLevel(req: Request, res: Response) {
+    res.status(201).json(ok(adminService.createHeroJourneyLevel(req.body)));
+  },
+
+  async generateHeroJourneyLevel(req: Request, res: Response) {
+    res.status(201).json(ok(await adminService.generateHeroJourneyLevel(req.body)));
+  },
+
+  saveHeroJourneyLevel(req: Request, res: Response) {
+    res.json(ok(adminService.saveHeroJourneyLevel(req.params.levelId.toString(), req.body.map)));
+  },
+
+  resetHeroJourneyLevel(req: Request, res: Response) {
+    res.json(ok(adminService.resetHeroJourneyLevel(req.params.levelId.toString())));
+  },
 };

@@ -7,6 +7,7 @@ import type {
   AuthUser,
   GameAnalyticsEvent,
   GameCatalogItem,
+  HeroJourneyLevelSnapshot,
   GameMode,
   PlaySession,
   ScoreRecord,
@@ -44,12 +45,12 @@ const gameScreenshot = (slug: string) => `${env.webOrigin}/assets/game-screensho
 export const seedUsers: UserEntity[] = [
   {
     id: randomUUID(),
-    email: 'admin@casualgame.world',
-    displayName: 'Arcade Admin',
+    email: env.seedAdminEmail,
+    displayName: env.seedAdminDisplayName,
     avatarUrl: '',
     role: 'admin',
     status: 'active',
-    passwordHash: bcrypt.hashSync('Admin123!', 10),
+    passwordHash: bcrypt.hashSync(env.seedAdminPassword, 10),
     createdAt: byOffsetHours(240),
     lastLoginAt: byOffsetHours(2),
   },
@@ -301,10 +302,10 @@ export const seedGames: GameEntity[] = [
   {
     id: randomUUID(),
     slug: 'neoguri',
-    title: '너구리',
+    title: '스낵 타워',
     shortDescription: '사다리를 오르내리며 간식을 모으고 굴러오는 적을 피하는 플랫폼 게임',
     description:
-      '너구리는 층별 발판과 사다리를 오르내리며 모든 간식을 회수하는 플랫폼 아케이드 게임입니다. 굴러다니는 적과 충돌하면 게임이 끝나고, 간식을 모두 모으면 다음 스테이지로 넘어가며 적 수와 속도가 올라갑니다.',
+      '스낵 타워는 층별 발판과 사다리를 오르내리며 모든 간식을 회수하는 플랫폼 아케이드 게임입니다. 굴러다니는 적과 충돌하면 게임이 끝나고, 간식을 모두 모으면 다음 스테이지로 넘어가며 적 수와 속도가 올라갑니다.',
     thumbnailUrl: gameScreenshot('neoguri'),
     bannerUrl: gameScreenshot('neoguri'),
     entryUrl: `${env.webOrigin}/games/neoguri/index.html`,
@@ -334,10 +335,10 @@ export const seedGames: GameEntity[] = [
   {
     id: randomUUID(),
     slug: 'galaga',
-    title: '갤러그',
+    title: '별무리 슈터',
     shortDescription: '적 편대를 무너뜨리고 다이빙 공격을 피하는 고정 슈터',
     description:
-      '갤러그는 좌우 이동과 연사만으로 적 편대를 하나씩 정리하는 고정 슈터입니다. 편대는 좌우로 이동하며 탄막을 내리고, 일부 적은 급강하 공격까지 섞어 들어와 짧은 플레이 안에서도 강한 집중감을 만듭니다.',
+      '별무리 슈터는 좌우 이동과 연사만으로 적 편대를 하나씩 정리하는 고정 슈터입니다. 편대는 좌우로 이동하며 탄막을 내리고, 일부 적은 급강하 공격까지 섞어 들어와 짧은 플레이 안에서도 강한 집중감을 만듭니다.',
     thumbnailUrl: gameScreenshot('galaga'),
     bannerUrl: gameScreenshot('galaga'),
     entryUrl: `${env.webOrigin}/games/galaga/index.html`,
@@ -495,6 +496,65 @@ export const seedGames: GameEntity[] = [
       allowedModes: ['normal'],
     },
     relatedSlugs: ['pixel-harvest', 'neoguri', 'galaga'],
+  },
+];
+
+export const seedHeroJourneyLevels: Array<Omit<HeroJourneyLevelSnapshot, 'map' | 'customized' | 'updatedAt'>> = [
+  {
+    id: 'gate-hall',
+    name: { ko: '고대 아레나 입구', en: 'Ancient Arena Gate' },
+    biome: 'ruin',
+    quest: { ko: '무너진 아레나의 경비를 제압하고 중앙 트로피 옆 보물상자를 여세요.', en: 'Defeat the guards across the ruined arena and open the chest beside the center trophy.' },
+    intro: { ko: '1층은 넓게 무너진 고대 아레나입니다. 기둥, 계단, 석상 사이의 경비를 정리하세요.', en: 'Floor 1 is a broad ruined arena. Clear the guards between columns, stairs, and statues.' },
+    clearText: { ko: '아레나 입구 돌파. 무너진 채석장으로 내려갑니다.', en: 'Arena gate cleared. Descending to the collapsed quarry.' },
+  },
+  {
+    id: 'broken-quarry',
+    name: { ko: '무너진 채석장', en: 'Collapsed Quarry' },
+    biome: 'ruin',
+    quest: { ko: '잔해와 함정을 지나 빠른 정찰병을 끊어내세요.', en: 'Move through rubble and traps, then take down the fast scouts.' },
+    intro: { ko: '2층은 무너진 채석장입니다. 흙바닥, 돌무더기, 함정이 길을 좁힙니다.', en: 'Floor 2: Collapsed Quarry. Dirt, rock piles, and traps narrow your route.' },
+    clearText: { ko: '채석장 통로 확보. 오래된 금고로 진입합니다.', en: 'Quarry route secured. Entering the old vault.' },
+  },
+  {
+    id: 'old-vault',
+    name: { ko: '오래된 금고', en: 'Old Vault' },
+    biome: 'ruin',
+    quest: { ko: '방패병과 창병을 분리해서 금고 중심을 장악하세요.', en: 'Split the shield guards and spearmen, then control the vault center.' },
+    intro: { ko: '3층 금고입니다. 방패병이 길목을 막고 창병이 긴 사거리로 압박합니다.', en: 'Floor 3: Old Vault. Shield guards block lanes while spearmen pressure from range.' },
+    clearText: { ko: '금고 봉인 해제. 마지막 오크 대장 방으로 향합니다.', en: 'Vault seal broken. Moving toward the orc warden’s chamber.' },
+  },
+  {
+    id: 'orc-keep',
+    name: { ko: '오크 대장 방', en: 'Orc Warden Keep' },
+    biome: 'ruin',
+    quest: { ko: '대장을 호위병과 떼어내고 마지막 상자를 여세요.', en: 'Separate the warden from the guards and open the final dungeon chest.' },
+    intro: { ko: '최종층입니다. 오크 대장과 호위대가 북쪽 성소를 지키고 있습니다.', en: 'Final dungeon floor. The orc warden and escorts guard the northern shrine.' },
+    clearText: { ko: '오크 대장을 쓰러뜨렸습니다. 성채 밖 숲길이 열렸습니다.', en: 'Orc warden defeated. The forest path beyond the keep is open.' },
+  },
+  {
+    id: 'forest-road',
+    name: { ko: '숲의 들머리', en: 'Forest Edge' },
+    biome: 'forest',
+    quest: { ko: '성채 밖 숲길의 정찰병을 제압하고 보급 상자를 여세요.', en: 'Defeat scouts on the forest road and open the supply chest.' },
+    intro: { ko: '성채를 빠져나오자 숲길이 이어집니다. 나무와 덤불 사이의 정찰병을 정리하세요.', en: 'Beyond the keep, the road enters the forest. Clear scouts between trees and bushes.' },
+    clearText: { ko: '숲길을 돌파했습니다. 사막 협곡으로 향합니다.', en: 'Forest path cleared. Heading for the desert canyon.' },
+  },
+  {
+    id: 'sunken-canyon',
+    name: { ko: '사막 협곡', en: 'Sunken Canyon' },
+    biome: 'desert',
+    quest: { ko: '메마른 협곡의 바위와 함정을 지나 길잡이 몹을 끊어내세요.', en: 'Cross rocks and traps in the dry canyon, then cut down the pathfinders.' },
+    intro: { ko: '뜨거운 사막 협곡입니다. 바위, 마른 풀, 함정이 길을 좁힙니다.', en: 'A hot desert canyon. Rocks, dry plants, and traps squeeze the route.' },
+    clearText: { ko: '사막 협곡을 벗어났습니다. 바람산 고갯길로 진입합니다.', en: 'Desert canyon escaped. Entering Wind Pass.' },
+  },
+  {
+    id: 'wind-pass',
+    name: { ko: '바람산 고갯길', en: 'Wind Pass' },
+    biome: 'mountain',
+    quest: { ko: '산길의 창병과 방패병을 분리해 마지막 고개를 장악하세요.', en: 'Separate the spearmen and shield guards to claim the final mountain pass.' },
+    intro: { ko: '차가운 바람산 고갯길입니다. 산등성이와 돌무더기가 시야와 동선을 가릅니다.', en: 'A cold mountain pass. Ridges and stone piles split sightlines and movement.' },
+    clearText: { ko: '고갯길을 넘어섰습니다. 출구 계단으로 여정을 마무리하세요.', en: 'Wind Pass crossed. Finish the journey at the exit stairs.' },
   },
 ];
 

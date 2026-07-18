@@ -216,3 +216,126 @@ export interface MultiplayerRoomSignalResponse {
   offer?: string;
   answer?: string;
 }
+
+export type LocalizedText = {
+  ko: string;
+  en: string;
+};
+
+export type HeroJourneyBiome = 'forest' | 'desert' | 'mountain' | 'ruin';
+export type HeroJourneyEnemyKind =
+  | 'guard'
+  | 'scout'
+  | 'spearman'
+  | 'brute'
+  | 'warden'
+  | 'zombie'
+  | 'captain'
+  | 'giant'
+  | 'skeleton'
+  | 'demon';
+export type HeroJourneyEnemyWeapon = 'sword' | 'spear';
+export type HeroJourneyEnemyShield = 'round' | 'rectangle';
+
+export interface HeroJourneyGridPoint {
+  x: number;
+  z: number;
+}
+
+export interface HeroJourneyMapEditorOrder {
+  editorOrder?: number;
+}
+
+export interface HeroJourneyFloorTile extends HeroJourneyGridPoint, HeroJourneyMapEditorOrder {
+  detail?: boolean;
+}
+
+export type HeroJourneyTerrainPaintKind =
+  | 'desert'
+  | 'field'
+  | 'hill'
+  | 'water'
+  | 'grass'
+  | 'flowers'
+  | 'stone-path'
+  | 'dirt-path';
+
+export interface HeroJourneyTerrainPaint extends HeroJourneyGridPoint, HeroJourneyMapEditorOrder {
+  kind: HeroJourneyTerrainPaintKind;
+  level: number;
+}
+
+export interface HeroJourneyWallSegment extends HeroJourneyGridPoint, HeroJourneyMapEditorOrder {
+  rotationQuarter: number;
+  half?: boolean;
+  narrow?: boolean;
+  opening?: boolean;
+}
+
+export interface HeroJourneyProp extends HeroJourneyGridPoint, HeroJourneyMapEditorOrder {
+  key: string;
+  radius: number;
+  rotationQuarter?: number;
+}
+
+export interface HeroJourneyCoin extends HeroJourneyGridPoint, HeroJourneyMapEditorOrder {
+  value: number;
+}
+
+export interface HeroJourneyEnemy extends HeroJourneyGridPoint, HeroJourneyMapEditorOrder {
+  hp: number;
+  speed: number;
+  value: number;
+  kind?: HeroJourneyEnemyKind;
+  weapon?: HeroJourneyEnemyWeapon;
+  shield?: HeroJourneyEnemyShield;
+  damage?: number;
+  radius?: number;
+  aggroRange?: number;
+  attackRange?: number;
+  attackIntervalMs?: number;
+  scale?: number;
+  rotationQuarter?: number;
+}
+
+export interface HeroJourneyMapConfig {
+  floorTiles: HeroJourneyFloorTile[];
+  terrainPaints?: HeroJourneyTerrainPaint[];
+  walls: HeroJourneyWallSegment[];
+  props: HeroJourneyProp[];
+  coins: HeroJourneyCoin[];
+  enemies: HeroJourneyEnemy[];
+  playerSpawn: HeroJourneyGridPoint;
+  chest: HeroJourneyGridPoint;
+  gate: HeroJourneyGridPoint;
+  exit: HeroJourneyGridPoint;
+}
+
+export interface HeroJourneyLevelSnapshot {
+  id: string;
+  name: LocalizedText;
+  biome: HeroJourneyBiome;
+  quest: LocalizedText;
+  intro: LocalizedText;
+  clearText: LocalizedText;
+  map?: HeroJourneyMapConfig;
+  customized: boolean;
+  custom?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface HeroJourneyLevelCreateInput {
+  id?: string;
+  name: LocalizedText;
+  biome?: HeroJourneyBiome;
+  quest?: LocalizedText;
+  intro?: LocalizedText;
+  clearText?: LocalizedText;
+  map?: HeroJourneyMapConfig;
+}
+
+export interface HeroJourneyLevelGenerateInput {
+  prompt?: string;
+  imageDataUrl?: string;
+}

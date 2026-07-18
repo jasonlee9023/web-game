@@ -968,6 +968,20 @@
         cursor: pointer;
       }
 
+      .editor-button:disabled {
+        cursor: not-allowed;
+        opacity: 0.48;
+      }
+
+      .editor-button--accent {
+        background: rgba(143, 215, 255, 0.18);
+        border-color: rgba(143, 215, 255, 0.34);
+      }
+
+      .editor-actions {
+        flex-wrap: wrap;
+      }
+
       .editor-controls {
         display: grid;
         gap: 10px;
@@ -1073,6 +1087,261 @@
 
       .editor-hint {
         line-height: 1.35;
+      }
+
+      .map-selection-toolbar {
+        position: absolute;
+        left: 0;
+        top: 0;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 211, 107, 0.4);
+        background: rgba(7, 16, 25, 0.82);
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+        backdrop-filter: blur(14px);
+        transform: translate(-50%, calc(-100% - 12px));
+        pointer-events: auto;
+        z-index: 11;
+      }
+
+      .map-selection-toolbar[hidden] {
+        display: none;
+      }
+
+      .map-selection-button {
+        width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.1);
+        color: #f5f8ff;
+        font: inherit;
+        font-size: 1.1rem;
+        line-height: 1;
+        cursor: pointer;
+        touch-action: manipulation;
+      }
+
+      .map-selection-button:active {
+        transform: translateY(1px);
+      }
+
+      .editor-palette {
+        display: grid;
+        gap: 10px;
+        padding: 10px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.045);
+      }
+
+      .editor-palette-group {
+        display: grid;
+        gap: 6px;
+      }
+
+      .editor-palette-label {
+        color: rgba(245, 248, 255, 0.62);
+        font-weight: 800;
+      }
+
+      .editor-palette-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+      }
+
+      .editor-palette-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 34px;
+        border: 1px solid rgba(143, 215, 255, 0.12);
+        border-radius: 10px;
+        padding: 7px;
+        background: rgba(12, 24, 36, 0.72);
+        color: #f5f8ff;
+        cursor: grab;
+        font: inherit;
+        font-size: 0.76rem;
+        font-weight: 800;
+        text-align: left;
+      }
+
+      .editor-palette-preview {
+        position: relative;
+        flex: 0 0 28px;
+        width: 28px;
+        height: 28px;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--preview-color) 28%, rgba(255, 255, 255, 0.08));
+        color: #071019;
+        font-size: 0.72rem;
+        font-weight: 900;
+      }
+
+      .editor-palette-preview::before,
+      .editor-palette-preview::after {
+        content: '';
+        position: absolute;
+        display: block;
+      }
+
+      .editor-palette-preview[data-preview='asset'] {
+        background:
+          linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03)),
+          rgba(12, 24, 36, 0.88);
+      }
+
+      .editor-palette-preview[data-preview='asset'] img {
+        position: relative;
+        z-index: 1;
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+
+      .editor-palette-preview[data-preview='tile']::before {
+        inset: 6px;
+        border-radius: 4px;
+        background: var(--preview-color);
+        box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.16);
+      }
+
+      .editor-palette-preview[data-preview='wall']::before {
+        width: 22px;
+        height: 7px;
+        border-radius: 4px;
+        background: var(--preview-color);
+        transform: rotate(-22deg);
+      }
+
+      .editor-palette-preview[data-preview='nature']::before {
+        width: 13px;
+        height: 13px;
+        top: 5px;
+        border-radius: 50% 50% 45% 45%;
+        background: var(--preview-color);
+      }
+
+      .editor-palette-preview[data-preview='nature']::after {
+        width: 5px;
+        height: 9px;
+        bottom: 4px;
+        border-radius: 3px;
+        background: #8a6042;
+      }
+
+      .editor-palette-preview[data-preview='rock']::before {
+        width: 18px;
+        height: 14px;
+        bottom: 6px;
+        border-radius: 9px 9px 6px 6px;
+        background: var(--preview-color);
+        transform: skewX(-10deg);
+      }
+
+      .editor-palette-preview[data-preview='coin']::before {
+        width: 15px;
+        height: 15px;
+        border-radius: 50%;
+        background: var(--preview-color);
+        box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.22);
+      }
+
+      .editor-palette-preview[data-preview='enemy']::before {
+        width: 16px;
+        height: 16px;
+        border-radius: 50% 50% 42% 42%;
+        background: var(--preview-color);
+      }
+
+      .editor-palette-preview[data-preview='box']::before {
+        width: 18px;
+        height: 13px;
+        border-radius: 3px;
+        background: var(--preview-color);
+        box-shadow: inset 0 4px 0 rgba(255, 255, 255, 0.22);
+      }
+
+      .editor-palette-preview[data-preview='gate']::before {
+        width: 18px;
+        height: 18px;
+        border: 3px solid var(--preview-color);
+        border-bottom: 0;
+        border-radius: 12px 12px 2px 2px;
+      }
+
+      .editor-palette-preview[data-preview='marker']::before {
+        width: 13px;
+        height: 13px;
+        border-radius: 50%;
+        background: var(--preview-color);
+        box-shadow: 0 0 0 4px rgba(126, 231, 135, 0.16);
+      }
+
+      .editor-palette-preview[data-preview='trap']::before {
+        width: 0;
+        height: 0;
+        border-left: 10px solid transparent;
+        border-right: 10px solid transparent;
+        border-bottom: 18px solid var(--preview-color);
+      }
+
+      .editor-palette-preview[data-preview='erase']::before {
+        width: 20px;
+        height: 3px;
+        border-radius: 2px;
+        background: #ff7f8a;
+        transform: rotate(45deg);
+      }
+
+      .editor-palette-preview[data-preview='erase']::after {
+        width: 20px;
+        height: 3px;
+        border-radius: 2px;
+        background: #ff7f8a;
+        transform: rotate(-45deg);
+      }
+
+      .editor-palette-preview[data-preview='prop']::before {
+        width: 14px;
+        height: 18px;
+        border-radius: 4px 4px 7px 7px;
+        background: var(--preview-color);
+      }
+
+      .editor-palette-text {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .editor-palette-item:active {
+        cursor: grabbing;
+      }
+
+      .editor-palette-item[data-active='true'] {
+        background: rgba(143, 215, 255, 0.2);
+        border-color: rgba(143, 215, 255, 0.42);
+      }
+
+      body[data-author-mode='true'] .editor-panel {
+        left: var(--edge-left);
+        right: auto;
+        width: min(430px, calc(var(--app-width) - var(--edge-left) - var(--edge-right)));
+        max-height: calc(var(--app-height) - var(--edge-top) - var(--edge-bottom));
+        overflow: auto;
       }
 
       @media (max-width: 720px) {
@@ -1209,6 +1478,10 @@
   <body>
     <div id="game-shell">
       <canvas id="game"></canvas>
+      <div id="map-selection-toolbar" class="map-selection-toolbar" hidden>
+        <button id="map-selection-rotate-left" class="map-selection-button" type="button" aria-label="왼쪽 90도 회전" title="왼쪽 90도 회전">↺</button>
+        <button id="map-selection-rotate-right" class="map-selection-button" type="button" aria-label="오른쪽 90도 회전" title="오른쪽 90도 회전">↻</button>
+      </div>
 
       <div class="hud">
         <div class="hud-head">
@@ -1345,7 +1618,7 @@
         <div class="editor-header">
           <div>
             <span class="eyebrow">Tune</span>
-            <strong>Transform Editor</strong>
+            <strong>Level Editor</strong>
           </div>
           <button id="editor-close" class="editor-button" type="button">닫기</button>
         </div>
@@ -1354,16 +1627,25 @@
           <select id="editor-mode" class="editor-select"></select>
         </label>
         <label class="editor-row-head">
+          <span>Level</span>
+          <select id="editor-level" class="editor-select"></select>
+        </label>
+        <label class="editor-row-head">
           <span id="editor-preset-label">Preset</span>
           <select id="editor-preset" class="editor-select"></select>
         </label>
         <div id="editor-controls" class="editor-controls"></div>
         <p class="editor-hint">
-          `Shift + E`로 열고 닫을 수 있습니다. 맵 모드에서는 클릭 배치, 우클릭 삭제, `R/F` 회전이 됩니다.
+          `Shift + E`로 열고 닫을 수 있습니다. 맵 모드에서는 빈 칸 클릭 배치, 오브젝트 클릭 선택, 선택 오브젝트 드래그 이동이 됩니다.
         </p>
         <div class="editor-actions">
+          <button id="editor-undo" class="editor-button" type="button">되돌리기</button>
+          <button id="editor-redo" class="editor-button" type="button">다시실행</button>
           <button id="editor-reset" class="editor-button" type="button">리셋</button>
+          <button id="editor-add-level" class="editor-button editor-button--accent" type="button">새 레벨</button>
           <button id="editor-copy" class="editor-button" type="button">JSON 복사</button>
+          <button id="editor-save" class="editor-button editor-button--accent" type="button">서버 저장</button>
+          <button id="editor-test" class="editor-button editor-button--accent" type="button">테스트 플레이</button>
         </div>
       </aside>
     </div>

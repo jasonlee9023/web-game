@@ -3,7 +3,6 @@ import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import LoginModal from '@/components/auth/LoginModal.vue';
-import { DEMO_CREDENTIALS } from '@/app/app.config';
 import { useAuthStore } from '@/stores/auth.store';
 import { applySeo } from '@/utils/seo';
 
@@ -35,19 +34,13 @@ onMounted(() => {
   <section class="auth-layout content-shell">
     <LoginModal
       :loading="authStore.loading"
-      :default-email="DEMO_CREDENTIALS.user.email"
-      :default-password="DEMO_CREDENTIALS.user.password"
       @submit="handleSubmit"
     />
     <aside class="info-panel">
-      <p class="eyebrow">Demo accounts</p>
-      <h2>바로 검증할 수 있는 계정</h2>
-      <ul class="plain-list">
-        <li>일반 사용자: {{ DEMO_CREDENTIALS.user.email }} / {{ DEMO_CREDENTIALS.user.password }}</li>
-        <li>관리자: {{ DEMO_CREDENTIALS.admin.email }} / {{ DEMO_CREDENTIALS.admin.password }}</li>
-      </ul>
+      <p class="eyebrow">Account</p>
+      <h2>등록된 계정으로 로그인</h2>
+      <p class="lead">관리자 계정 정보는 화면에 노출하지 않습니다. 필요한 계정은 서버 seed 또는 운영 환경 설정에서 관리합니다.</p>
       <p v-if="error" class="error-text">{{ error }}</p>
     </aside>
   </section>
 </template>
-

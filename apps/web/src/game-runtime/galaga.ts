@@ -41,7 +41,7 @@ type Star = {
 createHostedGame(
   canvas,
   {
-    title: '갤러그',
+    title: '별무리 슈터',
     mode: 'normal',
     durationMs: 80_000,
     reviveMs: 15_000,

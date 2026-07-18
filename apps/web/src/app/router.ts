@@ -14,6 +14,7 @@ import RankingPage from '@/pages/RankingPage.vue';
 import SignupPage from '@/pages/SignupPage.vue';
 import TermsPage from '@/pages/TermsPage.vue';
 import AdminPage from '@/pages/AdminPage.vue';
+import AdminGameManagePage from '@/pages/AdminGameManagePage.vue';
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -30,6 +31,7 @@ export const router = createRouter({
     { path: '/terms', component: TermsPage },
     { path: '/privacy', component: PrivacyPage },
     { path: '/admin', component: AdminPage, meta: { requiresAdmin: true } },
+    { path: '/admin/games/:slug', component: AdminGameManagePage, meta: { requiresAdmin: true } },
   ],
   scrollBehavior() {
     return { top: 0 };

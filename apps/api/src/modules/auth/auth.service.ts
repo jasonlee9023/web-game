@@ -39,7 +39,7 @@ function createTokenBundle(user: AuthUser, res: Response) {
 
   const accessToken = signAccessToken(tokenPayload);
   const refreshToken = signRefreshToken(tokenPayload);
-  store.refreshTokens.set(refreshToken, user.id);
+  store.saveRefreshToken(refreshToken, user.id);
   setRefreshCookie(res, refreshToken);
   return { accessToken, user };
 }
@@ -64,6 +64,7 @@ export class AuthService {
     };
 
     store.users.unshift(user);
+    store.persistUsers();
     return createTokenBundle(toAuthUser(user), res);
   }
 
@@ -79,6 +80,7 @@ export class AuthService {
     }
 
     user.lastLoginAt = isoNow();
+    store.persistUsers();
     return createTokenBundle(toAuthUser(user), res);
   }
 
@@ -87,7 +89,7 @@ export class AuthService {
       throw new HttpError(401, 'Refresh token missing');
     }
 
-    if (!store.refreshTokens.has(refreshToken)) {
+    if (!store.hasRefreshToken(refreshToken)) {
       throw new HttpError(401, 'Refresh token expired');
     }
 
@@ -97,13 +99,13 @@ export class AuthService {
       throw new HttpError(404, 'User not found');
     }
 
-    store.refreshTokens.delete(refreshToken);
+    store.deleteRefreshToken(refreshToken);
     return createTokenBundle(toAuthUser(user), res);
   }
 
   logout(refreshToken: string | undefined, res: Response) {
     if (refreshToken) {
-      store.refreshTokens.delete(refreshToken);
+      store.deleteRefreshToken(refreshToken);
     }
 
     res.clearCookie('cgw_refresh_token');
@@ -117,9 +119,9 @@ export class AuthService {
     }
 
     user.displayName = displayName;
+    store.persistUsers();
     return toAuthUser(user);
   }
 }
 
 export const authService = new AuthService();
-

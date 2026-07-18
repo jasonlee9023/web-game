@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
 
-import { createAdminGame, fetchAdminGames, fetchDashboard, publishGame } from '@/api/admin.api';
+import { createAdminGame, fetchAdminGames, fetchDashboard, publishGame, type AdminGameItem } from '@/api/admin.api';
 import { applySeo } from '@/utils/seo';
 
 const summary = ref<{ games: number; publishedGames: number; scoresToday: number; activeAdSlots: number } | null>(null);
-const games = ref<Array<{ id: string; title: string; slug: string; status: string; version: string }>>([]);
+const games = ref<AdminGameItem[]>([]);
 const saving = ref(false);
+
 const form = reactive({
   slug: 'sky-burst',
   title: 'Sky Burst',
@@ -21,9 +22,17 @@ const form = reactive({
   modes: 'normal,hard',
 });
 
+function csv(value: string) {
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 async function load() {
-  summary.value = await fetchDashboard();
-  games.value = await fetchAdminGames();
+  const [dashboard, gameList] = await Promise.all([fetchDashboard(), fetchAdminGames()]);
+  summary.value = dashboard;
+  games.value = gameList;
 }
 
 async function submit() {
@@ -45,14 +54,14 @@ async function submit() {
       inputs: ['touch', 'keyboard'],
       status: 'draft',
       scoreOrder: 'higher_better',
-      categories: form.categories.split(',').map((item) => item.trim()),
-      tags: form.tags.split(',').map((item) => item.trim()),
-      modes: form.modes.split(',').map((item) => item.trim()),
+      categories: csv(form.categories),
+      tags: csv(form.tags),
+      modes: csv(form.modes),
       featured: false,
       validationRule: {
         minPlayTimeMs: 5000,
         maxScore: 50000,
-        allowedModes: form.modes.split(',').map((item) => item.trim()),
+        allowedModes: csv(form.modes),
       },
       relatedSlugs: [],
     });
@@ -62,10 +71,15 @@ async function submit() {
   }
 }
 
+async function publish(game: AdminGameItem) {
+  await publishGame(game.id);
+  await load();
+}
+
 onMounted(async () => {
   applySeo({
     title: '관리자',
-    description: '게임 등록, 게시 상태 변경, 광고/랭킹 운영을 위한 관리자 페이지 MVP',
+    description: '게임 목록에서 각 게임의 운영 설정 화면으로 진입하는 관리자 대시보드',
   });
   await load();
 });
@@ -76,7 +90,7 @@ onMounted(async () => {
     <header class="page-hero compact">
       <p class="eyebrow">Admin</p>
       <h1>운영 대시보드</h1>
-      <p>게임 manifest, 게시 상태, 광고 슬롯 전략을 한 화면에서 관리하는 최소 관리자 UI입니다.</p>
+      <p>게임을 선택해 상세 관리 화면에서 운영 설정, 검증 정책, 전용 편집기를 관리합니다.</p>
     </header>
 
     <div class="metric-strip admin-metrics" v-if="summary">
@@ -98,35 +112,39 @@ onMounted(async () => {
       </article>
     </div>
 
-    <div class="two-column-panel">
-      <form class="info-panel admin-form" @submit.prevent="submit">
-        <p class="eyebrow">Quick register</p>
-        <h2>신규 게임 등록</h2>
-        <label class="stacked-label">slug <input v-model="form.slug" required /></label>
-        <label class="stacked-label">title <input v-model="form.title" required /></label>
-        <label class="stacked-label">shortDescription <input v-model="form.shortDescription" required /></label>
-        <label class="stacked-label">description <textarea v-model="form.description" rows="4" required /></label>
-        <label class="stacked-label">version <input v-model="form.version" required /></label>
-        <label class="stacked-label">categories <input v-model="form.categories" required /></label>
-        <label class="stacked-label">tags <input v-model="form.tags" required /></label>
-        <label class="stacked-label">modes <input v-model="form.modes" required /></label>
-        <button class="pill-button submit" :disabled="saving">{{ saving ? '저장 중...' : '게임 등록' }}</button>
-      </form>
-
-      <article class="info-panel">
-        <p class="eyebrow">Catalog</p>
-        <h2>게임 게시 상태</h2>
-        <div class="score-list">
-          <div v-for="game in games" :key="game.id" class="score-row">
-            <div>
-              <strong>{{ game.title }}</strong>
-              <span>{{ game.slug }} · {{ game.version }} · {{ game.status }}</span>
-            </div>
-            <button class="pill-button quiet" @click="publishGame(game.id).then(load)">게시</button>
+    <section class="info-panel">
+      <div class="section-heading tight">
+        <div>
+          <p class="eyebrow">Catalog</p>
+          <h2>게임 관리</h2>
+        </div>
+      </div>
+      <div class="score-list admin-game-list">
+        <div v-for="game in games" :key="game.id" class="score-row admin-game-row">
+          <div>
+            <strong>{{ game.title }}</strong>
+            <span>{{ game.slug }} · {{ game.version }} · {{ game.status }} · {{ game.engineType }}</span>
+          </div>
+          <div class="admin-row-actions">
+            <button class="pill-button quiet" @click="publish(game)">게시</button>
+            <RouterLink class="pill-button" :to="`/admin/games/${game.slug}`">관리</RouterLink>
           </div>
         </div>
-      </article>
-    </div>
+      </div>
+    </section>
+
+    <form class="info-panel admin-form" @submit.prevent="submit">
+      <p class="eyebrow">Quick Register</p>
+      <h2>신규 게임 등록</h2>
+      <label class="stacked-label">slug <input v-model="form.slug" required /></label>
+      <label class="stacked-label">title <input v-model="form.title" required /></label>
+      <label class="stacked-label">shortDescription <input v-model="form.shortDescription" required /></label>
+      <label class="stacked-label">description <textarea v-model="form.description" rows="4" required /></label>
+      <label class="stacked-label">version <input v-model="form.version" required /></label>
+      <label class="stacked-label">categories <input v-model="form.categories" required /></label>
+      <label class="stacked-label">tags <input v-model="form.tags" required /></label>
+      <label class="stacked-label">modes <input v-model="form.modes" required /></label>
+      <button class="pill-button submit" :disabled="saving">{{ saving ? '저장 중...' : '게임 등록' }}</button>
+    </form>
   </section>
 </template>
-

@@ -3,7 +3,7 @@ import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned, retargetClip } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
-import type { MultiplayerRoomSummary } from '@casual-game-world/shared';
+import type { ApiEnvelope, HeroJourneyLevelCreateInput, HeroJourneyLevelSnapshot, MultiplayerRoomSummary } from '@casual-game-world/shared';
 import {
   notifyMultiplayerRoomCleared,
   notifyMultiplayerRoomCreated,
@@ -21,8 +21,12 @@ import {
   heartbeatRoom as heartbeatLobbyRoom,
   joinRoom as joinLobbyRoom,
 } from '../api/multiplayer.api';
+import { getAccessToken } from '../api/http';
 
 const canvasNode = document.querySelector<HTMLCanvasElement>('#game');
+const mapSelectionToolbarNode = document.querySelector<HTMLElement>('#map-selection-toolbar');
+const mapSelectionRotateLeftNode = document.querySelector<HTMLButtonElement>('#map-selection-rotate-left');
+const mapSelectionRotateRightNode = document.querySelector<HTMLButtonElement>('#map-selection-rotate-right');
 const attackButtonNode = document.querySelector<HTMLButtonElement>('#attack-button');
 const magicButtonNode = document.querySelector<HTMLButtonElement>('#magic-button');
 const mobileAttackButtonNode = document.querySelector<HTMLButtonElement>('#mobile-attack-button');
@@ -79,11 +83,20 @@ const editorPresetLabelNode = document.querySelector<HTMLElement>('#editor-prese
 const editorPresetNode = document.querySelector<HTMLSelectElement>('#editor-preset');
 const editorControlsNode = document.querySelector<HTMLElement>('#editor-controls');
 const editorCloseNode = document.querySelector<HTMLButtonElement>('#editor-close');
+const editorUndoNode = document.querySelector<HTMLButtonElement>('#editor-undo');
+const editorRedoNode = document.querySelector<HTMLButtonElement>('#editor-redo');
 const editorResetNode = document.querySelector<HTMLButtonElement>('#editor-reset');
+const editorAddLevelNode = document.querySelector<HTMLButtonElement>('#editor-add-level');
 const editorCopyNode = document.querySelector<HTMLButtonElement>('#editor-copy');
+const editorLevelNode = document.querySelector<HTMLSelectElement>('#editor-level');
+const editorSaveNode = document.querySelector<HTMLButtonElement>('#editor-save');
+const editorTestNode = document.querySelector<HTMLButtonElement>('#editor-test');
 
 if (
   !canvasNode ||
+  !mapSelectionToolbarNode ||
+  !mapSelectionRotateLeftNode ||
+  !mapSelectionRotateRightNode ||
   !attackButtonNode ||
   !magicButtonNode ||
   !mobileAttackButtonNode ||
@@ -140,13 +153,22 @@ if (
   !editorPresetNode ||
   !editorControlsNode ||
   !editorCloseNode ||
+  !editorUndoNode ||
+  !editorRedoNode ||
   !editorResetNode ||
-  !editorCopyNode
+  !editorAddLevelNode ||
+  !editorCopyNode ||
+  !editorLevelNode ||
+  !editorSaveNode ||
+  !editorTestNode
 ) {
   throw new Error('Hero Journey UI shell is incomplete');
 }
 
 const canvas = canvasNode;
+const mapSelectionToolbarEl = mapSelectionToolbarNode;
+const mapSelectionRotateLeftEl = mapSelectionRotateLeftNode;
+const mapSelectionRotateRightEl = mapSelectionRotateRightNode;
 const attackButton = attackButtonNode;
 const magicButton = magicButtonNode;
 const mobileAttackButton = mobileAttackButtonNode;
@@ -203,13 +225,25 @@ const editorPresetLabelEl = editorPresetLabelNode;
 const editorPresetEl = editorPresetNode;
 const editorControlsEl = editorControlsNode;
 const editorCloseEl = editorCloseNode;
+const editorUndoEl = editorUndoNode;
+const editorRedoEl = editorRedoNode;
 const editorResetEl = editorResetNode;
+const editorAddLevelEl = editorAddLevelNode;
 const editorCopyEl = editorCopyNode;
+const editorLevelEl = editorLevelNode;
+const editorSaveEl = editorSaveNode;
+const editorTestEl = editorTestNode;
 const rootStyle = document.documentElement.style;
 const visualViewport = window.visualViewport;
 const coarsePointerMedia = window.matchMedia('(pointer: coarse)');
 const urlParams = new URLSearchParams(window.location.search);
 const startsInEditorMode = urlParams.get('editor') === '1';
+const startsInAuthorMode = urlParams.get('author') === '1';
+const initialEditorModeParam = urlParams.get('mode');
+const initialEditorLevelParam = urlParams.get('level');
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
+
+document.body.dataset.authorMode = String(startsInAuthorMode);
 
 type GameLanguage = 'ko' | 'en';
 type LocalizedText = Record<GameLanguage, string>;
@@ -378,6 +412,11 @@ const RUNTIME_COPY = {
     enemySpearman: '창병',
     enemyBrute: '방패병',
     enemyWarden: '오크 대장',
+    enemyZombie: '좀비',
+    enemyCaptain: '바르바로사 선장',
+    enemyGiant: '거인',
+    enemySkeleton: '해골병',
+    enemyDemon: '악마',
     enemyGuard: '오크 경비병',
     languageChanged: '언어가 변경되었습니다.',
   },
@@ -543,6 +582,11 @@ const RUNTIME_COPY = {
     enemySpearman: 'Spearman',
     enemyBrute: 'Shield Guard',
     enemyWarden: 'Orc Warden',
+    enemyZombie: 'Zombie',
+    enemyCaptain: 'Captain Barbarossa',
+    enemyGiant: 'Giant',
+    enemySkeleton: 'Skeleton',
+    enemyDemon: 'Demon',
     enemyGuard: 'Orc Guard',
     languageChanged: 'Language changed.',
   },
@@ -616,7 +660,6 @@ type ModelKey =
   | 'wood-support';
 
 type BiomeModelKey =
-  | 'forest-pack'
   | 'tree-1'
   | 'tree-2'
   | 'tree-3'
@@ -637,7 +680,73 @@ type BiomeModelKey =
   | 'terrain-1'
   | 'terrain-2';
 
-type TemplateKey = ModelKey | BiomeModelKey;
+const FOREST_PACK_ITEM_CONFIGS = {
+  'forest-tree-1': { source: 't1-green', label: 'Forest Tree 1', radius: 0.72 },
+  'forest-tree-2': { source: 't2-green', label: 'Forest Tree 2', radius: 0.72 },
+  'forest-tree-3': { source: 't3-green', label: 'Forest Tree 3', radius: 0.72 },
+  'forest-tree-4': { source: 't4-green', label: 'Forest Tree 4', radius: 0.72 },
+  'forest-tree-5': { source: 't5-green', label: 'Forest Tree 5', radius: 0.72 },
+  'forest-tree-6': { source: 't6-green', label: 'Forest Tree 6', radius: 0.72 },
+  'forest-tree-7': { source: 't7-green', label: 'Forest Tree 7', radius: 0.72 },
+  'forest-plant-1': { source: 'p1-green', label: 'Forest Plant 1', radius: 0 },
+  'forest-plant-2': { source: 'p2-green', label: 'Forest Plant 2', radius: 0.42 },
+  'forest-plant-3': { source: 'p3-green', label: 'Forest Plant 3', radius: 0.48 },
+  'forest-plant-4': { source: 'p4-green', label: 'Forest Plant 4', radius: 0.36 },
+  'forest-plant-5': { source: 'p5-green', label: 'Forest Plant 5', radius: 0.38 },
+  'forest-grass-1': { source: 'g1-green', label: 'Forest Grass 1', radius: 0 },
+  'forest-grass-2': { source: 'g2-green', label: 'Forest Grass 2', radius: 0 },
+  'forest-grass-3': { source: 'g3-green', label: 'Forest Grass 3', radius: 0 },
+  'forest-grass-4': { source: 'g4-green', label: 'Forest Grass 4', radius: 0 },
+  'forest-grass-5': { source: 'g5-green', label: 'Forest Grass 5', radius: 0 },
+  'forest-rock-1': { source: 'r1', label: 'Forest Rock 1', radius: 0.38 },
+  'forest-rock-2': { source: 'r2', label: 'Forest Rock 2', radius: 0.44 },
+  'forest-rock-3': { source: 'r3', label: 'Forest Rock 3', radius: 0.48 },
+  'forest-rock-4': { source: 'r4', label: 'Forest Rock 4', radius: 0.42 },
+  'forest-rock-5': { source: 'r5', label: 'Forest Rock 5', radius: 0.58 },
+  'forest-rock-6': { source: 'r6', label: 'Forest Rock 6', radius: 0.62 },
+  'forest-rock-7': { source: 'r7', label: 'Forest Rock 7', radius: 0.68 },
+  'forest-rock-8': { source: 'r8', label: 'Forest Rock 8', radius: 0.72 },
+  'forest-rock-9': { source: 'r9', label: 'Forest Rock 9', radius: 1.05 },
+  'forest-rock-10': { source: 'r10', label: 'Forest Rock 10', radius: 1.12 },
+  'forest-dead-1': { source: 'dead1', label: 'Dead Tree 1', radius: 0.58 },
+  'forest-dead-2': { source: 'dead2', label: 'Dead Tree 2', radius: 0.56 },
+  'forest-dead-3': { source: 'dead3', label: 'Dead Tree 3', radius: 0.62 },
+  'forest-dead-4': { source: 'dead4', label: 'Dead Tree 4', radius: 0.78 },
+} as const;
+
+type ForestPackItemKey = keyof typeof FOREST_PACK_ITEM_CONFIGS;
+type LegacyForestPackKey = 'forest-pack';
+const FOREST_PACK_ITEM_SCALE = 0.004;
+type EnemyModelKey = 'cube-zombie' | 'captain-barbarossa' | 'giant' | 'skeleton' | 'demon';
+
+const ARENA_MODEL_KEYS = [
+  'arena-banner',
+  'arena-block',
+  'arena-border-corner',
+  'arena-border-straight',
+  'arena-bricks',
+  'arena-column',
+  'arena-column-damaged',
+  'arena-floor',
+  'arena-floor-detail',
+  'arena-soldier',
+  'arena-stairs',
+  'arena-stairs-corner',
+  'arena-stairs-corner-inner',
+  'arena-statue',
+  'arena-tree',
+  'arena-trophy',
+  'arena-wall',
+  'arena-wall-corner',
+  'arena-wall-gate',
+  'arena-weapon-rack',
+  'arena-weapon-spear',
+  'arena-weapon-sword',
+] as const;
+
+type ArenaModelKey = (typeof ARENA_MODEL_KEYS)[number];
+
+type TemplateKey = ModelKey | BiomeModelKey | ForestPackItemKey | ArenaModelKey | EnemyModelKey;
 
 type CircleObstacle = {
   x: number;
@@ -650,6 +759,13 @@ type RectObstacle = {
   z: number;
   halfWidth: number;
   halfDepth: number;
+};
+
+type TerrainSurfaceArea = {
+  x: number;
+  z: number;
+  radius: number;
+  height: number;
 };
 
 type CoinPickup = {
@@ -712,6 +828,7 @@ type CharacterRig = {
   hurtMs: number;
   rollMs: number;
   rollDurationMs: number;
+  variant?: 'zombie';
 };
 
 type EnemyUnit = {
@@ -753,6 +870,20 @@ type MagicProjectile = {
   damage: number;
   remainingMs: number;
   owner: MagicProjectileOwner;
+  previousPosition: THREE.Vector3;
+  trailAccumulatorMs: number;
+};
+
+type MagicParticle = {
+  position: THREE.Vector3;
+  velocity: THREE.Vector3;
+  color: THREE.Color;
+  maxLifeMs: number;
+  remainingMs: number;
+  radius: number;
+  intensity: number;
+  core: number;
+  drag: number;
 };
 
 type SceneAssets = {
@@ -803,6 +934,22 @@ type ResponsiveViewport = {
   renderScale: number;
   cameraOffset: THREE.Vector3;
   cameraLookOffset: THREE.Vector3;
+};
+
+type EditorCameraState = {
+  target: THREE.Vector3;
+  zoomScale: number;
+  initialized: boolean;
+  pointerId: number | null;
+  button: number;
+  startClientX: number;
+  startClientY: number;
+  lastClientX: number;
+  lastClientY: number;
+  startGroundPoint: THREE.Vector3 | null;
+  panning: boolean;
+  movingSelection: boolean;
+  selectionCandidate: MapSelection | null;
 };
 
 type AudioCue =
@@ -940,6 +1087,14 @@ type MapTool =
   | 'erase'
   | 'floor'
   | 'floor-detail'
+  | 'terrain-desert'
+  | 'terrain-field'
+  | 'terrain-hill'
+  | 'terrain-water'
+  | 'terrain-grass'
+  | 'terrain-flowers'
+  | 'terrain-stone-path'
+  | 'terrain-dirt-path'
   | 'wall'
   | 'wall-half'
   | 'wall-narrow'
@@ -950,7 +1105,6 @@ type MapTool =
   | 'dirt'
   | 'rocks'
   | 'stones'
-  | 'forest-pack'
   | 'tree-1'
   | 'tree-2'
   | 'tree-3'
@@ -970,11 +1124,18 @@ type MapTool =
   | 'mountain-3'
   | 'terrain-1'
   | 'terrain-2'
+  | ForestPackItemKey
+  | ArenaModelKey
   | 'trap'
   | 'wood-structure'
   | 'wood-support'
   | 'coin'
   | 'enemy'
+  | 'enemy-zombie'
+  | 'enemy-captain'
+  | 'enemy-giant'
+  | 'enemy-skeleton'
+  | 'enemy-demon'
   | 'player-spawn'
   | 'chest'
   | 'gate'
@@ -1004,16 +1165,27 @@ type GridPoint = {
   z: number;
 };
 
+type MapEditorOrderMeta = {
+  editorOrder?: number;
+};
+
 type FloorTileConfig = GridPoint & {
   detail?: boolean;
-};
+} & MapEditorOrderMeta;
+
+type TerrainPaintKind = 'desert' | 'field' | 'hill' | 'water' | 'grass' | 'flowers' | 'stone-path' | 'dirt-path';
+
+type TerrainPaintConfig = GridPoint & {
+  kind: TerrainPaintKind;
+  level: number;
+} & MapEditorOrderMeta;
 
 type WallSegmentConfig = GridPoint & {
   rotationQuarter: number;
   half?: boolean;
   narrow?: boolean;
   opening?: boolean;
-};
+} & MapEditorOrderMeta;
 
 type BuiltInPropKey =
   | 'banner'
@@ -1026,17 +1198,25 @@ type BuiltInPropKey =
   | 'wood-structure'
   | 'wood-support';
 
-type JourneyPropKey = BuiltInPropKey | BiomeModelKey;
+type JourneyPropKey = BuiltInPropKey | BiomeModelKey | ForestPackItemKey | LegacyForestPackKey | ArenaModelKey;
 
 type PropConfig = GridPoint & {
   key: JourneyPropKey;
   radius: number;
   rotationQuarter?: number;
+} & MapEditorOrderMeta;
+
+type RenderablePropKey = Exclude<JourneyPropKey, LegacyForestPackKey>;
+type RenderablePropConfig = Omit<PropConfig, 'key'> & {
+  key: RenderablePropKey;
+};
+type RenderableMapPropConfig = RenderablePropConfig & {
+  sourcePropIndex: number;
 };
 
 type CoinConfig = GridPoint & {
   value: number;
-};
+} & MapEditorOrderMeta;
 
 type EnemyConfig = GridPoint & {
   hp: number;
@@ -1052,14 +1232,15 @@ type EnemyConfig = GridPoint & {
   attackIntervalMs?: number;
   scale?: number;
   rotationQuarter?: number;
-};
+} & MapEditorOrderMeta;
 
-type EnemyKind = 'guard' | 'scout' | 'spearman' | 'brute' | 'warden';
+type EnemyKind = 'guard' | 'scout' | 'spearman' | 'brute' | 'warden' | 'zombie' | 'captain' | 'giant' | 'skeleton' | 'demon';
 type EnemyWeaponKey = 'sword' | 'spear';
 type EnemyShieldKey = 'round' | 'rectangle';
 
 type DungeonMapConfig = {
   floorTiles: FloorTileConfig[];
+  terrainPaints: TerrainPaintConfig[];
   walls: WallSegmentConfig[];
   props: PropConfig[];
   coins: CoinConfig[];
@@ -1087,8 +1268,13 @@ const GAME_PLAY_PATH = `/games/${GAME_SLUG}/play`;
 const MODEL_ROOT = '/assets/dungeon-quest/models';
 const ANIMATION_ROOT = '/assets/dungeon-quest/anims';
 const BIOME_MODEL_ROOT = '/assets/hero-journey/biomes';
+const FOREST_PACK_MODEL_FILE = 'forest-pack.fbx';
+const ARENA_MODEL_ROOT = '/assets/hero-journey/mini-arena';
+const ENEMY_MODEL_ROOT = '/assets/hero-journey/enemies';
+const CUBE_ZOMBIE_MODEL_FILE = 'cube-zombie.fbx';
 const WEAPON_EDITOR_STORAGE_KEY = 'dungeon-quest:weapon-editor:v1';
-const MAP_EDITOR_STORAGE_KEY = 'dungeon-quest:map-editor:v3';
+const LEGACY_MAP_EDITOR_STORAGE_KEY = 'dungeon-quest:map-editor:v3';
+const MAP_EDITOR_STORAGE_KEY = 'hero-journey:level-editor:v1';
 const SOUND_SETTINGS_STORAGE_KEY = 'dungeon-quest:sound:v1';
 const MUSIC_STEP_SECONDS = 0.38;
 const MUSIC_BASS_NOTES = [110, 123.47, 98, 110, 130.81, 146.83, 110, 98];
@@ -1120,7 +1306,6 @@ const EDITOR_PRESET_FIELDS: Record<EditorPresetKey, EditorField[]> = {
   ],
 };
 const BIOME_MODEL_CONFIGS: Record<BiomeModelKey, { file: string; scale: number; stripMeshes?: string[] }> = {
-  'forest-pack': { file: 'forest-pack.fbx', scale: 0.0005, stripMeshes: ['Plane'] },
   'tree-1': { file: 'tree-1.fbx', scale: 0.004 },
   'tree-2': { file: 'tree-2.fbx', scale: 0.004 },
   'tree-3': { file: 'tree-3.fbx', scale: 0.004 },
@@ -1134,12 +1319,43 @@ const BIOME_MODEL_CONFIGS: Record<BiomeModelKey, { file: string; scale: number; 
   'plant-5': { file: 'plant-5.fbx', scale: 0.006 },
   'rock-1': { file: 'rock-1.fbx', scale: 0.006 },
   'rock-3': { file: 'rock-3.fbx', scale: 0.006 },
-  'rock-6': { file: 'rock-6.fbx', scale: 0.006 },
-  'mountain-1': { file: 'mountain-1.fbx', scale: 0.0025 },
-  'mountain-2': { file: 'mountain-2.fbx', scale: 0.0025 },
-  'mountain-3': { file: 'mountain-3.fbx', scale: 0.0028 },
-  'terrain-1': { file: 'terrain-1.fbx', scale: 0.0035 },
-  'terrain-2': { file: 'terrain-2.fbx', scale: 0.0035 },
+  'rock-6': { file: 'rock-6.glb', scale: 1 },
+  'mountain-1': { file: 'mountain-1.glb', scale: 1 },
+  'mountain-2': { file: 'mountain-2.glb', scale: 1 },
+  'mountain-3': { file: 'mountain-3.glb', scale: 1 },
+  'terrain-1': { file: 'terrain-1.glb', scale: 1 },
+  'terrain-2': { file: 'terrain-2.glb', scale: 1 },
+};
+const ARENA_MODEL_CONFIGS: Record<ArenaModelKey, { file: string; scale: number }> = {
+  'arena-banner': { file: 'banner.glb', scale: 1 },
+  'arena-block': { file: 'block.glb', scale: 1 },
+  'arena-border-corner': { file: 'border-corner.glb', scale: 1 },
+  'arena-border-straight': { file: 'border-straight.glb', scale: 1 },
+  'arena-bricks': { file: 'bricks.glb', scale: 1 },
+  'arena-column': { file: 'column.glb', scale: 1 },
+  'arena-column-damaged': { file: 'column-damaged.glb', scale: 1 },
+  'arena-floor': { file: 'floor.glb', scale: 1 },
+  'arena-floor-detail': { file: 'floor-detail.glb', scale: 1 },
+  'arena-soldier': { file: 'character-soldier.glb', scale: 1 },
+  'arena-stairs': { file: 'stairs.glb', scale: 1 },
+  'arena-stairs-corner': { file: 'stairs-corner.glb', scale: 1 },
+  'arena-stairs-corner-inner': { file: 'stairs-corner-inner.glb', scale: 1 },
+  'arena-statue': { file: 'statue.glb', scale: 1 },
+  'arena-tree': { file: 'tree.glb', scale: 1 },
+  'arena-trophy': { file: 'trophy.glb', scale: 1 },
+  'arena-wall': { file: 'wall.glb', scale: 1 },
+  'arena-wall-corner': { file: 'wall-corner.glb', scale: 1 },
+  'arena-wall-gate': { file: 'wall-gate.glb', scale: 1 },
+  'arena-weapon-rack': { file: 'weapon-rack.glb', scale: 1 },
+  'arena-weapon-spear': { file: 'weapon-spear.glb', scale: 1 },
+  'arena-weapon-sword': { file: 'weapon-sword.glb', scale: 1 },
+};
+const ENEMY_MODEL_CONFIGS: Record<EnemyModelKey, { file: string; scale: number }> = {
+  'cube-zombie': { file: CUBE_ZOMBIE_MODEL_FILE, scale: 0.0068 },
+  'captain-barbarossa': { file: 'captain-barbarossa.fbx', scale: 0.0108 },
+  giant: { file: 'giant.fbx', scale: 0.0075 },
+  skeleton: { file: 'skeleton.fbx', scale: 0.0125 },
+  demon: { file: 'demon.fbx', scale: 0.0078 },
 };
 const JOURNEY_THEMES: Record<
   JourneyBiome,
@@ -1209,6 +1425,14 @@ const MAP_TOOL_LABELS: Record<MapTool, string> = {
   erase: 'Erase',
   floor: 'Floor',
   'floor-detail': 'Floor Detail',
+  'terrain-desert': 'Desert Brush',
+  'terrain-field': 'Field Brush',
+  'terrain-hill': 'Hill Brush',
+  'terrain-water': 'Watercourse Brush',
+  'terrain-grass': 'Grassland Brush',
+  'terrain-flowers': 'Flower Field Brush',
+  'terrain-stone-path': 'Stone Path Brush',
+  'terrain-dirt-path': 'Dirt Path Brush',
   wall: 'Wall',
   'wall-half': 'Wall Half',
   'wall-narrow': 'Wall Narrow',
@@ -1219,7 +1443,9 @@ const MAP_TOOL_LABELS: Record<MapTool, string> = {
   dirt: 'Dirt',
   rocks: 'Rocks',
   stones: 'Stones',
-  'forest-pack': 'Forest Pack',
+  ...Object.fromEntries(
+    Object.entries(FOREST_PACK_ITEM_CONFIGS).map(([key, config]) => [key, config.label]),
+  ) as Record<ForestPackItemKey, string>,
   'tree-1': 'Tree 1',
   'tree-2': 'Tree 2',
   'tree-3': 'Tree 3',
@@ -1239,19 +1465,159 @@ const MAP_TOOL_LABELS: Record<MapTool, string> = {
   'mountain-3': 'Mountain 3',
   'terrain-1': 'Terrain 1',
   'terrain-2': 'Terrain 2',
+  'arena-banner': 'Arena Banner',
+  'arena-block': 'Arena Block',
+  'arena-border-corner': 'Arena Border Corner',
+  'arena-border-straight': 'Arena Border',
+  'arena-bricks': 'Arena Bricks',
+  'arena-column': 'Arena Column',
+  'arena-column-damaged': 'Damaged Column',
+  'arena-floor': 'Arena Floor',
+  'arena-floor-detail': 'Arena Floor Detail',
+  'arena-soldier': 'Arena Soldier',
+  'arena-stairs': 'Arena Stairs',
+  'arena-stairs-corner': 'Arena Corner Stairs',
+  'arena-stairs-corner-inner': 'Arena Inner Stairs',
+  'arena-statue': 'Arena Statue',
+  'arena-tree': 'Arena Tree',
+  'arena-trophy': 'Arena Trophy',
+  'arena-wall': 'Arena Wall',
+  'arena-wall-corner': 'Arena Wall Corner',
+  'arena-wall-gate': 'Arena Gate Wall',
+  'arena-weapon-rack': 'Arena Weapon Rack',
+  'arena-weapon-spear': 'Arena Spear',
+  'arena-weapon-sword': 'Arena Sword',
   trap: 'Trap',
   'wood-structure': 'Wood Structure',
   'wood-support': 'Wood Support',
   coin: 'Coin',
   enemy: 'Enemy',
+  'enemy-zombie': 'Zombie',
+  'enemy-captain': 'Captain Barbarossa',
+  'enemy-giant': 'Giant',
+  'enemy-skeleton': 'Skeleton',
+  'enemy-demon': 'Demon',
   'player-spawn': 'Player Spawn',
   chest: 'Chest',
   gate: 'Gate',
   exit: 'Exit',
 };
+const MAP_TOOL_DRAG_TYPE = 'application/x-hero-journey-map-tool';
+const MAP_HISTORY_LIMIT = 80;
+const TERRAIN_BRUSH_CELL_SIZE = 0.5;
+const TERRAIN_BRUSH_RADIUS = 1.08;
+const TERRAIN_PATH_RADIUS = 0.46;
+const TERRAIN_PAINT_MAX_LEVEL = 8;
+const TERRAIN_PAINT_CONFIGS: Record<
+  TerrainPaintKind,
+  { tool: MapTool; label: string; color: string; roughness?: number; maxLevel?: number; heightStep: number; baseHeight: number; raisesLevel: boolean }
+> = {
+  desert: { tool: 'terrain-desert', label: '사막', color: '#c79b5a', roughness: 1, heightStep: 0, baseHeight: 0, raisesLevel: false },
+  field: { tool: 'terrain-field', label: '들판', color: '#668e4c', roughness: 1, heightStep: 0, baseHeight: 0, raisesLevel: false },
+  hill: { tool: 'terrain-hill', label: '언덕', color: '#6f7f4c', roughness: 1, heightStep: 0, baseHeight: 0, raisesLevel: false },
+  water: { tool: 'terrain-water', label: '물길', color: '#3f8fb7', roughness: 0.72, maxLevel: 1, heightStep: 0, baseHeight: -0.065, raisesLevel: false },
+  grass: { tool: 'terrain-grass', label: '풀밭', color: '#3f8d45', roughness: 1, heightStep: 0, baseHeight: 0, raisesLevel: false },
+  flowers: { tool: 'terrain-flowers', label: '꽃밭', color: '#7a9f4c', roughness: 1, heightStep: 0, baseHeight: 0, raisesLevel: false },
+  'stone-path': { tool: 'terrain-stone-path', label: '돌길', color: '#8c8f87', roughness: 1, heightStep: 0, baseHeight: 0, raisesLevel: false },
+  'dirt-path': { tool: 'terrain-dirt-path', label: '흙길', color: '#8b6840', roughness: 1, heightStep: 0, baseHeight: 0, raisesLevel: false },
+};
+const TERRAIN_TOOL_TO_KIND = Object.fromEntries(
+  Object.entries(TERRAIN_PAINT_CONFIGS).map(([kind, config]) => [config.tool, kind]),
+) as Partial<Record<MapTool, TerrainPaintKind>>;
+const MAP_PALETTE_GROUPS: Array<{ label: string; tools: MapTool[] }> = [
+  { label: '지형', tools: ['floor', 'floor-detail', 'dirt', 'terrain-1', 'terrain-2'] },
+  {
+    label: '지형 제작',
+    tools: [
+      'terrain-desert',
+      'terrain-field',
+      'terrain-hill',
+      'terrain-water',
+      'terrain-grass',
+      'terrain-flowers',
+      'terrain-stone-path',
+      'terrain-dirt-path',
+    ],
+  },
+  { label: '벽/구조', tools: ['wall', 'wall-half', 'wall-narrow', 'wall-opening', 'column', 'wood-structure', 'wood-support'] },
+  { label: '자연물', tools: ['tree-1', 'tree-2', 'tree-3', 'bush-1', 'bush-2', 'bush-3', 'grass-1', 'grass-2'] },
+  {
+    label: 'Forest Pack',
+    tools: [
+      'forest-tree-1',
+      'forest-tree-2',
+      'forest-tree-3',
+      'forest-tree-4',
+      'forest-tree-5',
+      'forest-tree-6',
+      'forest-tree-7',
+      'forest-plant-1',
+      'forest-plant-2',
+      'forest-plant-3',
+      'forest-plant-4',
+      'forest-plant-5',
+      'forest-grass-1',
+      'forest-grass-2',
+      'forest-grass-3',
+      'forest-grass-4',
+      'forest-grass-5',
+      'forest-dead-1',
+      'forest-dead-2',
+      'forest-dead-3',
+      'forest-dead-4',
+    ],
+  },
+  {
+    label: 'Forest Rocks',
+    tools: [
+      'forest-rock-1',
+      'forest-rock-2',
+      'forest-rock-3',
+      'forest-rock-4',
+      'forest-rock-5',
+      'forest-rock-6',
+      'forest-rock-7',
+      'forest-rock-8',
+      'forest-rock-9',
+      'forest-rock-10',
+    ],
+  },
+  { label: '암석/산', tools: ['rocks', 'stones', 'rock-1', 'rock-3', 'rock-6', 'mountain-1', 'mountain-2', 'mountain-3'] },
+  {
+    label: '미니 아레나',
+    tools: [
+      'arena-floor',
+      'arena-floor-detail',
+      'arena-wall',
+      'arena-wall-corner',
+      'arena-wall-gate',
+      'arena-column',
+      'arena-column-damaged',
+      'arena-stairs',
+      'arena-stairs-corner',
+      'arena-border-straight',
+      'arena-border-corner',
+      'arena-tree',
+      'arena-statue',
+      'arena-trophy',
+      'arena-weapon-rack',
+      'arena-bricks',
+      'arena-block',
+      'arena-banner',
+      'arena-soldier',
+    ],
+  },
+  { label: '장식/상호작용', tools: ['banner', 'barrel', 'plant-1', 'plant-4', 'plant-5', 'trap', 'coin'] },
+  {
+    label: '적군',
+    tools: ['enemy', 'enemy-zombie', 'enemy-skeleton', 'enemy-demon', 'enemy-giant', 'enemy-captain'],
+  },
+  { label: '핵심 포인트', tools: ['player-spawn', 'chest', 'gate', 'exit', 'erase'] },
+];
 const DUNGEON_LEVELS = createDungeonLevels();
 const DEFAULT_MAP_CONFIG = cloneMapConfig(DUNGEON_LEVELS[0]?.map ?? createDefaultMapConfig());
 const DUEL_MAP_CONFIG = cloneMapConfig(DEFAULT_MAP_CONFIG);
+const INITIAL_LEVEL_INDEX = resolveInitialLevelIndex();
 const ROOM_BOUNDS = {
   minX: -10.4,
   maxX: 10.4,
@@ -1284,6 +1650,13 @@ const PLAYER_ROLL_MOVE_PHASE = 0.58;
 const PLAYER_ROLL_VISUAL_LIFT_BASE = 0.1;
 const PLAYER_ROLL_VISUAL_LIFT_PEAK = 0.38;
 const PLAYER_ROLL_EXIT_BLEND_MS = 120;
+const EDITOR_CAMERA_PAN_THRESHOLD_PX = 6;
+const EDITOR_CAMERA_ZOOM_MIN = 0.42;
+const EDITOR_CAMERA_ZOOM_MAX = 1.8;
+const MAGIC_PARTICLE_MAX = 960;
+const MAGIC_PARTICLE_COLORS = ['#0A1B28', '#071F43', '#357D7E', '#35EEEE', '#919DF0'].map((color) => new THREE.Color(color));
+const MAGIC_TRAIL_COLOR = new THREE.Color('#007dff');
+const MAGIC_CAST_COLOR = new THREE.Color('#35eeee');
 const RTC_CONFIGURATION: RTCConfiguration = {
   iceServers: [
     {
@@ -1310,6 +1683,7 @@ const baseCameraOffset = new THREE.Vector3(7.4, 9.6, 7.2);
 const baseCameraLookOffset = new THREE.Vector3(0, 0.8, -0.8);
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const raycaster = new THREE.Raycaster();
+const groundHeightRaycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 const clock = new THREE.Clock();
 
@@ -1352,6 +1726,124 @@ editorCursor.position.y = 0.06;
 editorCursor.visible = false;
 scene.add(editorCursor);
 
+const editorBrushCursor = new THREE.Mesh(
+  new THREE.RingGeometry(0.92, 1.08, 64),
+  new THREE.MeshBasicMaterial({
+    color: '#9ff0a3',
+    transparent: true,
+    opacity: 0.7,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  }),
+);
+editorBrushCursor.rotation.x = -Math.PI / 2;
+editorBrushCursor.position.y = 0.07;
+editorBrushCursor.visible = false;
+scene.add(editorBrushCursor);
+
+const mapSelectionMarker = new THREE.Mesh(
+  new THREE.RingGeometry(0.72, 0.86, 48),
+  new THREE.MeshBasicMaterial({
+    color: '#ffd36b',
+    transparent: true,
+    opacity: 0.82,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  }),
+);
+mapSelectionMarker.rotation.x = -Math.PI / 2;
+mapSelectionMarker.position.y = 0.08;
+mapSelectionMarker.visible = false;
+scene.add(mapSelectionMarker);
+
+const magicParticleParamData = new Float32Array(MAGIC_PARTICLE_MAX * 2);
+const magicParticleTintData = new Float32Array(MAGIC_PARTICLE_MAX * 3);
+const magicParticleGeometry = new THREE.PlaneGeometry(2, 2, 1, 1);
+const magicParticleParamAttribute = new THREE.InstancedBufferAttribute(magicParticleParamData, 2);
+const magicParticleTintAttribute = new THREE.InstancedBufferAttribute(magicParticleTintData, 3);
+magicParticleParamAttribute.setUsage(THREE.DynamicDrawUsage);
+magicParticleTintAttribute.setUsage(THREE.DynamicDrawUsage);
+magicParticleGeometry.setAttribute('instanceParams', magicParticleParamAttribute);
+magicParticleGeometry.setAttribute('instanceTint', magicParticleTintAttribute);
+
+const magicParticleMaterial = new THREE.ShaderMaterial({
+  transparent: true,
+  depthTest: true,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+  uniforms: {
+    uTime: { value: 0 },
+    uExposure: { value: 1.18 },
+  },
+  vertexShader: `
+    precision highp float;
+
+    attribute vec2 instanceParams;
+    attribute vec3 instanceTint;
+
+    varying vec2 vLocal;
+    varying vec3 vTint;
+    varying float vIntensity;
+    varying float vCore;
+    varying vec3 vCenter;
+
+    void main() {
+      vLocal = position.xy;
+      vTint = instanceTint;
+      vIntensity = instanceParams.x;
+      vCore = instanceParams.y;
+
+      vec4 worldPosition = modelMatrix * instanceMatrix * vec4(position, 1.0);
+      vCenter = worldPosition.xyz;
+      gl_Position = projectionMatrix * viewMatrix * worldPosition;
+    }
+  `,
+  fragmentShader: `
+    precision highp float;
+
+    uniform float uTime;
+    uniform float uExposure;
+
+    varying vec2 vLocal;
+    varying vec3 vTint;
+    varying float vIntensity;
+    varying float vCore;
+    varying vec3 vCenter;
+
+    void main() {
+      float squaredDistance = dot(vLocal, vLocal);
+
+      if (squaredDistance > 1.0) {
+        discard;
+      }
+
+      float distanceFromCenter = sqrt(max(squaredDistance, 0.000001));
+      float envelope = max(1.0 - distanceFromCenter, 0.0);
+      float slowSparkle = 0.94 + 0.06 * sin(uTime * 6.0 + vCenter.x * 1.7 + vCenter.z * 1.3);
+      float energy = vIntensity * slowSparkle;
+
+      float broadHalo = exp(-squaredDistance * 2.25);
+      float smokeGlow = exp(-squaredDistance * 5.5);
+      float innerGlow = exp(-squaredDistance * 21.0);
+      float hotNeedle = exp(-squaredDistance * 185.0) * vCore;
+      float electricEdge = pow(envelope, 4.8) * 0.18;
+
+      vec3 coloredBloom = vTint * energy * (broadHalo * 0.62 + smokeGlow * 0.42 + innerGlow * 0.35);
+      vec3 spectralLift = vec3(0.10, 0.84, 1.0) * energy * electricEdge;
+      vec3 whiteCore = vec3(1.0) * energy * hotNeedle * 3.15;
+      vec3 finalColor = (coloredBloom + spectralLift + whiteCore) * uExposure;
+
+      gl_FragColor = vec4(finalColor, min(1.0, energy * 3.0));
+    }
+  `,
+});
+
+const magicParticleMesh = new THREE.InstancedMesh(magicParticleGeometry, magicParticleMaterial, MAGIC_PARTICLE_MAX);
+magicParticleMesh.frustumCulled = false;
+magicParticleMesh.count = 0;
+magicParticleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+scene.add(magicParticleMesh);
+
 const templates = new Map<TemplateKey, TemplateAsset>();
 const loader = new GLTFLoader();
 const fbxLoader = new FBXLoader();
@@ -1373,10 +1865,24 @@ const virtualJoystickState = {
 
 const obstacles: CircleObstacle[] = [];
 const wallObstacles: RectObstacle[] = [];
+const terrainGroundMeshes: THREE.Object3D[] = [];
+const terrainSurfaceAreas: TerrainSurfaceArea[] = [];
+const terrainPaintDiskGeometry = new THREE.CylinderGeometry(0.5, 0.54, 1, 14, 1, false);
+const terrainPaintLinkGeometry = new THREE.BoxGeometry(1, 1, 1);
+const terrainWaterDiskGeometry = new THREE.CircleGeometry(0.5, 32);
+terrainWaterDiskGeometry.rotateX(-Math.PI / 2);
+const terrainWaterLinkGeometry = new THREE.PlaneGeometry(1, 1, 12, 2);
+terrainWaterLinkGeometry.rotateX(-Math.PI / 2);
+const terrainPaintMaterials = new Map<string, THREE.MeshStandardMaterial>();
+let terrainWaterMaterial: THREE.ShaderMaterial | null = null;
 const effects: EffectPulse[] = [];
 const magicProjectiles: MagicProjectile[] = [];
+const magicParticles: MagicParticle[] = [];
+const magicParticleMatrix = new THREE.Matrix4();
+const magicParticleScale = new THREE.Vector3();
 const coins: CoinPickup[] = [];
 const enemies: EnemyUnit[] = [];
+const editorSelectionTargets: EditorSelectionTarget[] = [];
 
 let sceneAssets: SceneAssets | null = null;
 let gameMode: MatchMode = 'solo';
@@ -1425,7 +1931,7 @@ const state: GameState = {
   score: 0,
   totalTimeMs: SOLO_TOTAL_TIME_MS,
   elapsedMs: 0,
-  levelIndex: 0,
+  levelIndex: startsInEditorMode ? INITIAL_LEVEL_INDEX : 0,
   health: 100,
   maxHealth: 100,
   mana: 80,
@@ -1450,21 +1956,46 @@ const audioState: AudioSystem = {
   nextMusicTime: 0,
   musicStep: 0,
 };
-let dungeonMapConfig = startsInEditorMode ? loadMapConfig() : cloneMapConfig(DEFAULT_MAP_CONFIG);
+const serverLevelMaps = new Map<string, DungeonMapConfig>();
+const mapToolThumbnailCache = new Map<MapTool, string>();
+let currentEditedLevelIndex = startsInEditorMode ? INITIAL_LEVEL_INDEX : 0;
+let nextMapEditorOrder = 1;
+let dungeonMapConfig = loadMapConfig(startsInEditorMode ? currentEditedLevelIndex : 0);
 const weaponEditorState = loadWeaponEditorState();
-let currentEditorMode: EditorMode = 'transform';
+let currentEditorMode: EditorMode = initialEditorModeParam === 'map' ? 'map' : 'transform';
 let p2pHelpFlashMessage: string | null = null;
 let p2pHelpFlashTimerId: number | null = null;
 let currentEditorPreset: EditorPresetKey = 'mount';
 let currentMapTool: MapTool = 'floor';
 let currentMapRotationQuarter = 0;
 let currentHoverPoint: GridPoint | null = null;
+let selectedMapItem: MapSelection | null = null;
+let mapSelectionDragState: MapSelectionDragState | null = null;
+let terrainBrushDragState: TerrainBrushDragState | null = null;
+const editorCameraState: EditorCameraState = {
+  target: new THREE.Vector3(),
+  zoomScale: 1,
+  initialized: false,
+  pointerId: null,
+  button: 0,
+  startClientX: 0,
+  startClientY: 0,
+  lastClientX: 0,
+  lastClientY: 0,
+  startGroundPoint: null,
+  panning: false,
+  movingSelection: false,
+  selectionCandidate: null,
+};
+const mapUndoStack: DungeonMapConfig[] = [];
+const mapRedoStack: DungeonMapConfig[] = [];
 let pursuedEnemy: EnemyUnit | null = null;
 let editorVisible = startsInEditorMode;
 let utilityMenuOpen = false;
 let pursuedRemotePeer = false;
 let remotePeerAvatar: RemotePeerAvatar | null = null;
 const transformHandleModes: Partial<Record<keyof WeaponEditorState, TransformHandleStepMode>> = {};
+let mapToolThumbnailRenderer: THREE.WebGLRenderer | null = null;
 
 function modelUrl(name: ModelKey) {
   return `${MODEL_ROOT}/${name}.glb`;
@@ -1472,6 +2003,18 @@ function modelUrl(name: ModelKey) {
 
 function biomeModelUrl(name: BiomeModelKey) {
   return `${BIOME_MODEL_ROOT}/${BIOME_MODEL_CONFIGS[name].file}`;
+}
+
+function forestPackModelUrl() {
+  return `${BIOME_MODEL_ROOT}/${FOREST_PACK_MODEL_FILE}`;
+}
+
+function enemyModelUrl(name: EnemyModelKey) {
+  return `${ENEMY_MODEL_ROOT}/${ENEMY_MODEL_CONFIGS[name].file}`;
+}
+
+function arenaModelUrl(name: ArenaModelKey) {
+  return `${ARENA_MODEL_ROOT}/${ARENA_MODEL_CONFIGS[name].file}`;
 }
 
 function animationUrl(name: string) {
@@ -1502,6 +2045,7 @@ function cloneGridPoint(source: GridPoint): GridPoint {
 function cloneMapConfig(source: DungeonMapConfig): DungeonMapConfig {
   return {
     floorTiles: source.floorTiles.map((tile) => ({ ...tile })),
+    terrainPaints: source.terrainPaints?.map((paint) => ({ ...paint })) ?? [],
     walls: source.walls.map((wall) => ({ ...wall })),
     props: source.props.map((prop) => ({ ...prop })),
     coins: source.coins.map((coin) => ({ ...coin })),
@@ -1511,6 +2055,74 @@ function cloneMapConfig(source: DungeonMapConfig): DungeonMapConfig {
     gate: cloneGridPoint(source.gate),
     exit: cloneGridPoint(source.exit),
   };
+}
+
+type OrderedMapItem = FloorTileConfig | TerrainPaintConfig | WallSegmentConfig | PropConfig | CoinConfig | EnemyConfig;
+type RotatableMapItemKind = 'wall' | 'prop' | 'enemy';
+type RotatableMapItem = WallSegmentConfig | PropConfig | EnemyConfig;
+type MapSelection = {
+  kind: RotatableMapItemKind;
+  index: number;
+};
+type EditorSelectionTarget = {
+  root: THREE.Object3D;
+  selection: MapSelection;
+  editorOrder: number;
+  layer: number;
+};
+type MapSelectionDragState = {
+  before: DungeonMapConfig;
+  moved: boolean;
+  label: string;
+};
+type TerrainBrushDragState = {
+  before: DungeonMapConfig;
+  changed: boolean;
+  lastRebuildMs: number;
+  lastPoint: THREE.Vector3 | null;
+};
+
+const REMOVABLE_MAP_ITEM_LAYER: Record<'floor' | 'terrain' | 'wall' | 'prop' | 'coin' | 'enemy', number> = {
+  floor: 0,
+  terrain: 1,
+  wall: 2,
+  prop: 3,
+  coin: 4,
+  enemy: 5,
+};
+
+function isValidMapEditorOrder(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+function allocateMapEditorOrder() {
+  const order = nextMapEditorOrder;
+  nextMapEditorOrder += 1;
+  return order;
+}
+
+function assignMissingMapEditorOrders(config: DungeonMapConfig) {
+  const orderedGroups: OrderedMapItem[][] = [
+    config.floorTiles,
+    config.terrainPaints,
+    config.walls,
+    config.props,
+    config.coins,
+    config.enemies,
+  ];
+
+  let maxOrder = 0;
+  for (const group of orderedGroups) {
+    for (const item of group) {
+      if (!isValidMapEditorOrder(item.editorOrder)) {
+        item.editorOrder = allocateMapEditorOrder();
+      }
+      maxOrder = Math.max(maxOrder, item.editorOrder);
+    }
+  }
+
+  nextMapEditorOrder = Math.max(nextMapEditorOrder, maxOrder + 1);
+  return config;
 }
 
 function pushHorizontalWalls(
@@ -1561,7 +2173,7 @@ function createRoomShell(detailOffset = 0) {
   walls.push({ x: -1.5, z: -11.5, rotationQuarter: 0, half: true });
   walls.push({ x: 1.5, z: -11.5, rotationQuarter: 0, half: true });
 
-  return { floorTiles, walls };
+  return { floorTiles, terrainPaints: [] as TerrainPaintConfig[], walls };
 }
 
 function createEnemy(
@@ -1637,6 +2249,67 @@ function createEnemy(
       radius: 0.52,
       scale: 1.28,
     },
+    zombie: {
+      kind: 'zombie',
+      hp: 5,
+      speed: 0.86,
+      value: 185,
+      weapon: 'sword',
+      damage: 18,
+      attackIntervalMs: 1680,
+      aggroRange: 6.2,
+      attackRange: 1.05,
+      radius: 0.43,
+      scale: 1.05,
+    },
+    captain: {
+      kind: 'captain',
+      hp: 8,
+      speed: 1.32,
+      value: 340,
+      weapon: 'sword',
+      damage: 24,
+      attackIntervalMs: 1050,
+      aggroRange: 5.8,
+      attackRange: 1.28,
+      radius: 0.48,
+    },
+    giant: {
+      kind: 'giant',
+      hp: 10,
+      speed: 0.82,
+      value: 380,
+      weapon: 'sword',
+      damage: 30,
+      attackIntervalMs: 1800,
+      aggroRange: 5.6,
+      attackRange: 1.45,
+      radius: 0.72,
+    },
+    skeleton: {
+      kind: 'skeleton',
+      hp: 3,
+      speed: 1.22,
+      value: 170,
+      weapon: 'sword',
+      damage: 14,
+      attackIntervalMs: 1250,
+      aggroRange: 5.2,
+      attackRange: 1.12,
+      radius: 0.34,
+    },
+    demon: {
+      kind: 'demon',
+      hp: 7,
+      speed: 1.18,
+      value: 280,
+      weapon: 'sword',
+      damage: 22,
+      attackIntervalMs: 1180,
+      aggroRange: 6.0,
+      attackRange: 1.22,
+      radius: 0.48,
+    },
   };
 
   return {
@@ -1650,6 +2323,112 @@ function createEnemy(
 
 function createDefaultMapConfig(): DungeonMapConfig {
   return cloneMapConfig(createDungeonLevels()[0].map);
+}
+
+function createMiniArenaFloorTiles() {
+  const floorTiles: FloorTileConfig[] = [];
+  for (let x = -10; x <= 10; x += 1) {
+    for (let z = -12; z <= 11; z += 1) {
+      const mainArena = x >= -9 && x <= 8 && z >= -8 && z <= 8;
+      const westColonnade = x >= -10 && x <= -6 && z >= -6 && z <= 5;
+      const northBridge = x >= -5 && x <= 4 && z >= -11 && z <= -8;
+      const eastShrine = x >= 4 && x <= 10 && z >= -8 && z <= 1;
+      const southApron = x >= -5 && x <= 5 && z >= 7 && z <= 11;
+      const detachedEast = x >= 8 && x <= 10 && z >= 4 && z <= 6;
+      const detachedSouthWest = x >= -9 && x <= -7 && z >= 9 && z <= 11;
+      const brokenCut =
+        (x <= -8 && z <= -7) ||
+        (x >= 8 && z <= -10) ||
+        (x <= -8 && z >= 8) ||
+        (x >= 8 && z >= 8) ||
+        (x >= 1 && x <= 3 && z >= 8 && z <= 10);
+
+      if ((mainArena || westColonnade || northBridge || eastShrine || southApron || detachedEast || detachedSouthWest) && !brokenCut) {
+        floorTiles.push({ x, z, detail: Math.abs(x * 3 - z * 2) % 7 === 0 });
+      }
+    }
+  }
+
+  return floorTiles;
+}
+
+function createMiniArenaWalls() {
+  const walls: WallSegmentConfig[] = [];
+  pushHorizontalWalls(walls, -11.5, -5, -2, { half: true });
+  pushHorizontalWalls(walls, -11.5, 2, 5, { half: true });
+  pushHorizontalWalls(walls, -8.5, -9, -7, { narrow: true });
+  pushHorizontalWalls(walls, -8.5, 6, 9, { narrow: true });
+  pushHorizontalWalls(walls, 8.5, -5, -2, { half: true });
+  pushHorizontalWalls(walls, 8.5, 2, 5, { half: true });
+  pushVerticalWalls(walls, -10.5, -5, 4, { narrow: true });
+  pushVerticalWalls(walls, 10.5, -7, 0, { narrow: true });
+  pushVerticalWalls(walls, 4.5, -7, -4, { half: true });
+  pushVerticalWalls(walls, -5.5, -7, -4, { half: true });
+  return walls;
+}
+
+function createMiniArenaMapConfig(): DungeonMapConfig {
+  return {
+    floorTiles: createMiniArenaFloorTiles(),
+    terrainPaints: [],
+    walls: createMiniArenaWalls(),
+    props: [
+      { key: 'arena-column', x: -8.8, z: -5.6, radius: 0.44, rotationQuarter: 0 },
+      { key: 'arena-column-damaged', x: -6.2, z: -6.1, radius: 0.4, rotationQuarter: 1 },
+      { key: 'arena-column', x: 6.3, z: -6.2, radius: 0.44, rotationQuarter: 0 },
+      { key: 'arena-column-damaged', x: 8.8, z: -5.5, radius: 0.4, rotationQuarter: 3 },
+      { key: 'arena-column', x: -7.6, z: 5.0, radius: 0.44, rotationQuarter: 0 },
+      { key: 'arena-column-damaged', x: 1.8, z: 4.4, radius: 0.4, rotationQuarter: 2 },
+      { key: 'arena-column', x: 7.4, z: 0.3, radius: 0.44, rotationQuarter: 0 },
+      { key: 'arena-stairs', x: 7.5, z: -4.6, radius: 0, rotationQuarter: 3 },
+      { key: 'arena-stairs', x: 8.6, z: -2.5, radius: 0, rotationQuarter: 3 },
+      { key: 'arena-stairs-corner', x: 6.2, z: -7.5, radius: 0, rotationQuarter: 2 },
+      { key: 'arena-stairs-corner-inner', x: -0.8, z: -5.0, radius: 0, rotationQuarter: 1 },
+      { key: 'arena-border-straight', x: -8.7, z: -7.6, radius: 0.28, rotationQuarter: 0 },
+      { key: 'arena-border-straight', x: -7.6, z: -7.6, radius: 0.28, rotationQuarter: 0 },
+      { key: 'arena-border-straight', x: 6.8, z: 2.1, radius: 0.28, rotationQuarter: 1 },
+      { key: 'arena-border-straight', x: 9.4, z: 1.2, radius: 0.28, rotationQuarter: 0 },
+      { key: 'arena-border-corner', x: 9.4, z: -7.5, radius: 0.34, rotationQuarter: 2 },
+      { key: 'arena-wall-corner', x: -9.5, z: -6.5, radius: 0.46, rotationQuarter: 1 },
+      { key: 'arena-wall-corner', x: 9.5, z: -7.5, radius: 0.46, rotationQuarter: 2 },
+      { key: 'arena-trophy', x: 0, z: -1.4, radius: 0.42, rotationQuarter: 0 },
+      { key: 'arena-statue', x: -1.2, z: 5.8, radius: 0.48, rotationQuarter: 2 },
+      { key: 'arena-weapon-rack', x: -4.2, z: 4.7, radius: 0.42, rotationQuarter: 1 },
+      { key: 'arena-banner', x: 2.6, z: -5.0, radius: 0.22, rotationQuarter: 0 },
+      { key: 'arena-banner', x: -4.4, z: -8.7, radius: 0.22, rotationQuarter: 0 },
+      { key: 'arena-tree', x: -7.6, z: -1.2, radius: 0.62, rotationQuarter: 0 },
+      { key: 'arena-tree', x: -5.7, z: 0.8, radius: 0.62, rotationQuarter: 1 },
+      { key: 'arena-tree', x: 3.5, z: -5.8, radius: 0.62, rotationQuarter: 0 },
+      { key: 'arena-bricks', x: -9.0, z: -3.9, radius: 0.34, rotationQuarter: 0 },
+      { key: 'arena-bricks', x: 6.2, z: 1.7, radius: 0.34, rotationQuarter: 2 },
+      { key: 'arena-block', x: -6.8, z: 7.4, radius: 0.28, rotationQuarter: 0 },
+      { key: 'arena-block', x: 9.0, z: 5.4, radius: 0.28, rotationQuarter: 1 },
+      { key: 'arena-soldier', x: -8.6, z: 1.9, radius: 0.42, rotationQuarter: 1 },
+      { key: 'arena-soldier', x: 8.5, z: 2.6, radius: 0.42, rotationQuarter: 3 },
+    ],
+    coins: [
+      { x: -8.2, z: 6.1, value: 75 },
+      { x: -5.1, z: 3.0, value: 75 },
+      { x: -2.8, z: -6.6, value: 75 },
+      { x: -1.4, z: 1.7, value: 90 },
+      { x: 1.5, z: 1.7, value: 90 },
+      { x: 3.4, z: -7.2, value: 75 },
+      { x: 5.8, z: 4.4, value: 75 },
+      { x: 8.9, z: -1.7, value: 75 },
+    ],
+    enemies: [
+      createEnemy('zombie', -8.0, 2.8, { rotationQuarter: 1 }),
+      createEnemy('scout', -4.5, -4.2, { rotationQuarter: 2 }),
+      createEnemy('spearman', 0, -7.4, { rotationQuarter: 2 }),
+      createEnemy('guard', 4.7, 3.2, { rotationQuarter: 3 }),
+      createEnemy('zombie', 8.1, -0.6, { rotationQuarter: 3 }),
+      createEnemy('brute', 2.8, -3.4, { hp: 5, value: 240, rotationQuarter: 2 }),
+    ],
+    playerSpawn: { x: 0, z: 9.4 },
+    chest: { x: 0, z: -1.4 },
+    gate: { x: 0, z: -11.55 },
+    exit: { x: 0, z: -12.35 },
+  };
 }
 
 function createDungeonLevels(): DungeonLevelConfig[] {
@@ -1680,51 +2459,16 @@ function createDungeonLevels(): DungeonLevelConfig[] {
   pushVerticalWalls(keep.walls, -7.5, -6, 2, { half: true });
   pushVerticalWalls(keep.walls, 7.5, -6, 2, { half: true });
   pushHorizontalWalls(keep.walls, -6.5, -3, 3, { half: true });
+  const miniArena = createMiniArenaMapConfig();
 
   return [{
     id: 'gate-hall',
-    name: { ko: '입구 회랑', en: 'Gate Hall' },
+    name: { ko: '고대 아레나 입구', en: 'Ancient Arena Gate' },
     biome: 'ruin',
-    quest: { ko: '흩어진 경비를 제압하고 첫 보물상자를 여세요.', en: 'Defeat the scattered guards and open the first treasure chest.' },
-    intro: { ko: '1층 입구 회랑입니다. 기본 경비를 정리하고 북쪽 통로를 여세요.', en: 'Floor 1: Gate Hall. Clear the guards and open the north passage.' },
-    clearText: { ko: '입구 회랑 돌파. 무너진 채석장으로 내려갑니다.', en: 'Gate Hall cleared. Descending to the collapsed quarry.' },
-    map: {
-      ...entrance,
-      props: [
-        { key: 'column', x: -6.4, z: -4.1, radius: 0.44, rotationQuarter: 0 },
-        { key: 'column', x: 6.4, z: -4.1, radius: 0.44, rotationQuarter: 0 },
-        { key: 'column', x: -6.4, z: 4.1, radius: 0.44, rotationQuarter: 0 },
-        { key: 'column', x: 6.4, z: 4.1, radius: 0.44, rotationQuarter: 0 },
-        { key: 'barrel', x: 8.2, z: 6.8, radius: 0.42, rotationQuarter: 0 },
-        { key: 'barrel', x: -8.1, z: 6.5, radius: 0.42, rotationQuarter: 0 },
-        { key: 'rocks', x: -4.8, z: -8.2, radius: 0.58, rotationQuarter: 0 },
-        { key: 'rocks', x: 4.9, z: -8.0, radius: 0.58, rotationQuarter: 0 },
-        { key: 'banner', x: -2.2, z: -10.5, radius: 0.18, rotationQuarter: 0 },
-        { key: 'banner', x: 2.2, z: -10.5, radius: 0.18, rotationQuarter: 0 },
-      ],
-      coins: [
-        { x: -9.1, z: 9.0, value: 70 },
-        { x: -6.1, z: 4.7, value: 70 },
-        { x: -4.0, z: -5.9, value: 70 },
-        { x: -1.5, z: 1.2, value: 70 },
-        { x: 1.9, z: -8.9, value: 70 },
-        { x: 3.6, z: 6.7, value: 70 },
-        { x: 6.7, z: -3.7, value: 70 },
-        { x: 8.9, z: 8.7, value: 70 },
-      ],
-      enemies: [
-        createEnemy('guard', -8.2, -8.5),
-        createEnemy('guard', 8.1, -8.4),
-        createEnemy('guard', -7.8, 7.4),
-        createEnemy('guard', 8.0, 7.3),
-        createEnemy('scout', -3.8, -2.6),
-        createEnemy('scout', 3.9, -2.4),
-      ],
-      playerSpawn: { x: 0, z: 9.35 },
-      chest: { x: 0, z: -1.8 },
-      gate: { x: 0, z: -11.55 },
-      exit: { x: 0, z: -12.35 },
-    },
+    quest: { ko: '무너진 아레나의 경비를 제압하고 중앙 트로피 옆 보물상자를 여세요.', en: 'Defeat the guards across the ruined arena and open the chest beside the center trophy.' },
+    intro: { ko: '1층은 넓게 무너진 고대 아레나입니다. 기둥, 계단, 석상 사이의 경비를 정리하세요.', en: 'Floor 1 is a broad ruined arena. Clear the guards between columns, stairs, and statues.' },
+    clearText: { ko: '아레나 입구 돌파. 무너진 채석장으로 내려갑니다.', en: 'Arena gate cleared. Descending to the collapsed quarry.' },
+    map: miniArena,
   },
   {
     id: 'broken-quarry',
@@ -1887,7 +2631,13 @@ function createDungeonLevels(): DungeonLevelConfig[] {
     map: {
       ...entrance,
       props: [
-        { key: 'forest-pack', x: 0, z: -15.0, radius: 0, rotationQuarter: 0 },
+        { key: 'forest-tree-1', x: -9.2, z: -11.0, radius: 0.72, rotationQuarter: 0 },
+        { key: 'forest-tree-2', x: -5.9, z: -10.4, radius: 0.72, rotationQuarter: 1 },
+        { key: 'forest-tree-3', x: 5.8, z: -10.4, radius: 0.72, rotationQuarter: 3 },
+        { key: 'forest-tree-4', x: 9.1, z: -10.8, radius: 0.72, rotationQuarter: 0 },
+        { key: 'forest-rock-4', x: -2.9, z: -11.1, radius: 0.42, rotationQuarter: 0 },
+        { key: 'forest-plant-3', x: 2.8, z: -11.0, radius: 0.48, rotationQuarter: 2 },
+        { key: 'forest-grass-2', x: 0.4, z: -10.6, radius: 0, rotationQuarter: 1 },
         { key: 'tree-1', x: -8.6, z: 8.0, radius: 0.62, rotationQuarter: 1 },
         { key: 'tree-2', x: 8.5, z: 8.2, radius: 0.62, rotationQuarter: 3 },
         { key: 'tree-3', x: -8.2, z: -8.2, radius: 0.62, rotationQuarter: 0 },
@@ -2033,33 +2783,130 @@ function createDungeonLevels(): DungeonLevelConfig[] {
   }];
 }
 
-function loadMapConfig() {
+function resolveInitialLevelIndex() {
+  if (!initialEditorLevelParam) {
+    return 0;
+  }
+
+  const byId = DUNGEON_LEVELS.findIndex((level) => level.id === initialEditorLevelParam);
+  if (byId >= 0) {
+    return byId;
+  }
+
+  const byNumber = Number(initialEditorLevelParam);
+  if (Number.isInteger(byNumber) && byNumber >= 1 && byNumber <= DUNGEON_LEVELS.length) {
+    return byNumber - 1;
+  }
+
+  return 0;
+}
+
+function normalizeMapConfig(parsed: Partial<DungeonMapConfig> | null | undefined, defaults: DungeonMapConfig) {
+  return assignMissingMapEditorOrders({
+    floorTiles: Array.isArray(parsed?.floorTiles) ? parsed.floorTiles.map((tile) => ({ ...tile })) : defaults.floorTiles,
+    terrainPaints: Array.isArray(parsed?.terrainPaints)
+      ? parsed.terrainPaints
+          .filter((paint) => isTerrainPaintKind(paint.kind))
+          .map((paint) => ({
+            ...paint,
+            level: normalizeTerrainPaintLevel(paint.kind, paint.level),
+          }))
+      : (defaults.terrainPaints ?? []),
+    walls: Array.isArray(parsed?.walls) ? parsed.walls.map((wall) => ({ ...wall })) : defaults.walls,
+    props: Array.isArray(parsed?.props) ? parsed.props.map((prop) => ({ ...prop })) : defaults.props,
+    coins: Array.isArray(parsed?.coins) ? parsed.coins.map((coin) => ({ ...coin })) : defaults.coins,
+    enemies: Array.isArray(parsed?.enemies) ? parsed.enemies.map((enemy) => ({ ...enemy })) : defaults.enemies,
+    playerSpawn: { ...defaults.playerSpawn, ...parsed?.playerSpawn },
+    chest: { ...defaults.chest, ...parsed?.chest },
+    gate: { ...defaults.gate, ...parsed?.gate },
+    exit: { ...defaults.exit, ...parsed?.exit },
+  });
+}
+
+function getLevelConfig(levelIndex: number) {
+  return DUNGEON_LEVELS[levelIndex] ?? DUNGEON_LEVELS[0];
+}
+
+function getLevelDefaultMap(levelIndex: number) {
+  return cloneMapConfig(getLevelConfig(levelIndex)?.map ?? DEFAULT_MAP_CONFIG);
+}
+
+function getLevelStorageId(levelIndex: number) {
+  return getLevelConfig(levelIndex)?.id ?? DUNGEON_LEVELS[0]?.id ?? 'gate-hall';
+}
+
+function buildLevelConfigFromSnapshot(snapshot: HeroJourneyLevelSnapshot, fallbackMap: DungeonMapConfig): DungeonLevelConfig {
+  return {
+    id: snapshot.id,
+    name: snapshot.name,
+    biome: snapshot.biome,
+    quest: snapshot.quest,
+    intro: snapshot.intro,
+    clearText: snapshot.clearText,
+    map: normalizeMapConfig(snapshot.map as Partial<DungeonMapConfig> | undefined, fallbackMap),
+  };
+}
+
+function upsertLevelConfigFromSnapshot(snapshot: HeroJourneyLevelSnapshot) {
+  const existingIndex = DUNGEON_LEVELS.findIndex((level) => level.id === snapshot.id);
+  const fallbackMap = existingIndex >= 0 ? getLevelDefaultMap(existingIndex) : cloneMapConfig(DEFAULT_MAP_CONFIG);
+  const nextLevel = buildLevelConfigFromSnapshot(snapshot, fallbackMap);
+
+  if (existingIndex >= 0) {
+    DUNGEON_LEVELS[existingIndex] = {
+      ...nextLevel,
+      map: snapshot.custom ? nextLevel.map : DUNGEON_LEVELS[existingIndex]!.map,
+    };
+    return existingIndex;
+  }
+
+  DUNGEON_LEVELS.push(nextLevel);
+  return DUNGEON_LEVELS.length - 1;
+}
+
+function readStoredLevelMaps(): Record<string, Partial<DungeonMapConfig>> {
   try {
     const raw = window.localStorage.getItem(MAP_EDITOR_STORAGE_KEY);
-    if (!raw) {
-      return cloneMapConfig(DEFAULT_MAP_CONFIG);
+    const parsed = raw ? (JSON.parse(raw) as { maps?: Record<string, Partial<DungeonMapConfig>> }) : {};
+    const maps = parsed && typeof parsed === 'object' && parsed.maps && typeof parsed.maps === 'object' ? parsed.maps : {};
+
+    if (Object.keys(maps).length > 0) {
+      return maps as Record<string, Partial<DungeonMapConfig>>;
     }
 
-    const parsed = JSON.parse(raw) as Partial<DungeonMapConfig>;
-    const defaults = cloneMapConfig(DEFAULT_MAP_CONFIG);
+    const legacyRaw = window.localStorage.getItem(LEGACY_MAP_EDITOR_STORAGE_KEY);
+    if (!legacyRaw) {
+      return {};
+    }
+
     return {
-      floorTiles: Array.isArray(parsed.floorTiles) ? parsed.floorTiles.map((tile) => ({ ...tile })) : defaults.floorTiles,
-      walls: Array.isArray(parsed.walls) ? parsed.walls.map((wall) => ({ ...wall })) : defaults.walls,
-      props: Array.isArray(parsed.props) ? parsed.props.map((prop) => ({ ...prop })) : defaults.props,
-      coins: Array.isArray(parsed.coins) ? parsed.coins.map((coin) => ({ ...coin })) : defaults.coins,
-      enemies: Array.isArray(parsed.enemies) ? parsed.enemies.map((enemy) => ({ ...enemy })) : defaults.enemies,
-      playerSpawn: { ...defaults.playerSpawn, ...parsed.playerSpawn },
-      chest: { ...defaults.chest, ...parsed.chest },
-      gate: { ...defaults.gate, ...parsed.gate },
-      exit: { ...defaults.exit, ...parsed.exit },
+      [DUNGEON_LEVELS[0]?.id ?? 'gate-hall']: JSON.parse(legacyRaw) as Partial<DungeonMapConfig>,
     };
   } catch {
-    return cloneMapConfig(DEFAULT_MAP_CONFIG);
+    return {};
   }
 }
 
+function loadMapConfig(levelIndex: number) {
+  const defaults = getLevelDefaultMap(levelIndex);
+  const levelId = getLevelStorageId(levelIndex);
+  const stored = startsInEditorMode ? readStoredLevelMaps()[levelId] : undefined;
+  const serverMap = serverLevelMaps.get(levelId);
+
+  return normalizeMapConfig(stored ?? serverMap, defaults);
+}
+
 function persistMapConfig() {
-  window.localStorage.setItem(MAP_EDITOR_STORAGE_KEY, JSON.stringify(dungeonMapConfig));
+  const maps = readStoredLevelMaps();
+  const levelId = getLevelStorageId(state.levelIndex);
+  maps[levelId] = cloneMapConfig(dungeonMapConfig);
+  window.localStorage.setItem(MAP_EDITOR_STORAGE_KEY, JSON.stringify({ maps }));
+}
+
+function clearPersistedMapConfig(levelId: string) {
+  const maps = readStoredLevelMaps();
+  delete maps[levelId];
+  window.localStorage.setItem(MAP_EDITOR_STORAGE_KEY, JSON.stringify({ maps }));
 }
 
 function isCustomMapMode() {
@@ -2067,7 +2914,7 @@ function isCustomMapMode() {
 }
 
 function getActiveLevel() {
-  return DUNGEON_LEVELS[state.levelIndex] ?? DUNGEON_LEVELS[0];
+  return getLevelConfig(state.levelIndex);
 }
 
 function applyLevelVisualTheme() {
@@ -2087,8 +2934,7 @@ function applyLevelMap(levelIndex: number) {
     return;
   }
 
-  const level = DUNGEON_LEVELS[levelIndex] ?? DUNGEON_LEVELS[0];
-  dungeonMapConfig = cloneMapConfig(level.map);
+  dungeonMapConfig = loadMapConfig(levelIndex);
 }
 
 function isFinalLevel() {
@@ -3472,8 +4318,10 @@ function isMapEditorActive() {
 function syncEditorSceneHelpers() {
   const active = isMapEditorActive();
   editorGrid.visible = active;
-  editorCursor.visible = active && currentHoverPoint !== null;
+  editorCursor.visible = active && currentHoverPoint !== null && !isTerrainBrushTool(currentMapTool);
+  editorBrushCursor.visible = active && currentHoverPoint !== null && isTerrainBrushTool(currentMapTool);
   if (active) {
+    ensureEditorCameraTarget();
     state.running = false;
     state.moveTarget = null;
     keyboard.up = false;
@@ -3481,7 +4329,11 @@ function syncEditorSceneHelpers() {
     keyboard.left = false;
     keyboard.right = false;
   }
+  applyCameraProjection();
+  updateCamera(true);
   updateEditorCursor();
+  syncMapSelectionUi();
+  syncMapHistoryButtons();
 }
 
 function syncEditorVisibility() {
@@ -3490,7 +4342,7 @@ function syncEditorVisibility() {
 }
 
 function isEditorTarget(target: EventTarget | null) {
-  return target instanceof Node && editorPanelEl.contains(target);
+  return target instanceof Node && (editorPanelEl.contains(target) || mapSelectionToolbarEl.contains(target));
 }
 
 function isVirtualControlTarget(target: EventTarget | null) {
@@ -3758,6 +4610,434 @@ function renderEditorPresetOptions() {
   editorPresetEl.value = currentEditorMode === 'transform' ? currentEditorPreset : currentMapTool;
 }
 
+function syncMapHistoryButtons() {
+  editorUndoEl.disabled = !isMapEditorActive() || mapUndoStack.length === 0;
+  editorRedoEl.disabled = !isMapEditorActive() || mapRedoStack.length === 0;
+}
+
+function clearMapHistory() {
+  mapUndoStack.length = 0;
+  mapRedoStack.length = 0;
+  syncMapHistoryButtons();
+}
+
+function pushMapHistory(snapshot: DungeonMapConfig) {
+  mapUndoStack.push(cloneMapConfig(snapshot));
+  if (mapUndoStack.length > MAP_HISTORY_LIMIT) {
+    mapUndoStack.shift();
+  }
+  mapRedoStack.length = 0;
+  syncMapHistoryButtons();
+}
+
+function applyMapHistorySnapshot(snapshot: DungeonMapConfig, message: string) {
+  dungeonMapConfig = cloneMapConfig(snapshot);
+  persistMapConfig();
+  rebuildSceneFromMapEdit(message);
+  syncMapHistoryButtons();
+}
+
+function undoMapEdit() {
+  const previous = mapUndoStack.pop();
+  if (!previous) {
+    return;
+  }
+
+  clearSelectedMapItem();
+  mapRedoStack.push(cloneMapConfig(dungeonMapConfig));
+  applyMapHistorySnapshot(previous, '이전 맵 편집 상태로 되돌렸습니다.');
+}
+
+function redoMapEdit() {
+  const next = mapRedoStack.pop();
+  if (!next) {
+    return;
+  }
+
+  clearSelectedMapItem();
+  mapUndoStack.push(cloneMapConfig(dungeonMapConfig));
+  applyMapHistorySnapshot(next, '되돌린 맵 편집을 다시 적용했습니다.');
+}
+
+function isMapTool(value: string): value is MapTool {
+  return value in MAP_TOOL_LABELS;
+}
+
+function isTerrainPaintKind(value: unknown): value is TerrainPaintKind {
+  return typeof value === 'string' && value in TERRAIN_PAINT_CONFIGS;
+}
+
+function getTerrainPaintKindForTool(tool: MapTool) {
+  return TERRAIN_TOOL_TO_KIND[tool] ?? null;
+}
+
+function isTerrainBrushTool(tool: MapTool) {
+  return getTerrainPaintKindForTool(tool) !== null;
+}
+
+function normalizeTerrainPaintLevel(kind: TerrainPaintKind, value: unknown) {
+  const config = TERRAIN_PAINT_CONFIGS[kind];
+  const maxLevel = config.maxLevel ?? TERRAIN_PAINT_MAX_LEVEL;
+  return THREE.MathUtils.clamp(Math.round(typeof value === 'number' && Number.isFinite(value) ? value : 1), 1, maxLevel);
+}
+
+function isForestPackItemKey(value: string): value is ForestPackItemKey {
+  return value in FOREST_PACK_ITEM_CONFIGS;
+}
+
+function isArenaModelKey(value: string): value is ArenaModelKey {
+  return (ARENA_MODEL_KEYS as readonly string[]).includes(value);
+}
+
+function isEnemyModelKey(value: string): value is EnemyModelKey {
+  return value in ENEMY_MODEL_CONFIGS;
+}
+
+function getEnemyKindForMapTool(tool: MapTool): EnemyKind | null {
+  switch (tool) {
+    case 'enemy':
+      return 'guard';
+    case 'enemy-zombie':
+      return 'zombie';
+    case 'enemy-captain':
+      return 'captain';
+    case 'enemy-giant':
+      return 'giant';
+    case 'enemy-skeleton':
+      return 'skeleton';
+    case 'enemy-demon':
+      return 'demon';
+    default:
+      return null;
+  }
+}
+
+function getEnemyModelKeyForKind(kind: EnemyKind | undefined): EnemyModelKey | null {
+  switch (kind) {
+    case 'zombie':
+      return 'cube-zombie';
+    case 'captain':
+      return 'captain-barbarossa';
+    case 'giant':
+      return 'giant';
+    case 'skeleton':
+      return 'skeleton';
+    case 'demon':
+      return 'demon';
+    default:
+      return null;
+  }
+}
+
+function getMapToolPreview(tool: MapTool) {
+  const terrainKind = getTerrainPaintKindForTool(tool);
+  if (terrainKind) {
+    const config = TERRAIN_PAINT_CONFIGS[terrainKind];
+    return {
+      kind: terrainKind.includes('path') || terrainKind === 'water' ? 'tile' : 'nature',
+      label: '',
+      color: config.color,
+    };
+  }
+
+  if (tool === 'coin') {
+    return { kind: 'coin', label: '', color: '#f5c84b' };
+  }
+  if (tool === 'enemy') {
+    return { kind: 'enemy', label: 'M', color: '#d85b5b' };
+  }
+  if (tool === 'enemy-zombie') {
+    return { kind: 'enemy', label: 'Z', color: '#76a866' };
+  }
+  if (tool === 'enemy-captain') {
+    return { kind: 'enemy', label: 'C', color: '#d19b58' };
+  }
+  if (tool === 'enemy-giant') {
+    return { kind: 'enemy', label: 'G', color: '#9a7f6a' };
+  }
+  if (tool === 'enemy-skeleton') {
+    return { kind: 'enemy', label: 'S', color: '#d6d0bd' };
+  }
+  if (tool === 'enemy-demon') {
+    return { kind: 'enemy', label: 'D', color: '#c65a6b' };
+  }
+  if (tool === 'erase') {
+    return { kind: 'erase', label: '', color: '#f5f8ff' };
+  }
+  if (tool === 'player-spawn') {
+    return { kind: 'marker', label: 'P', color: '#7ee787' };
+  }
+  if (tool === 'chest') {
+    return { kind: 'box', label: '', color: '#c8904a' };
+  }
+  if (tool === 'gate' || tool === 'exit') {
+    return { kind: 'gate', label: tool === 'gate' ? 'G' : 'X', color: '#8fd7ff' };
+  }
+  if (isWallLikeTool(tool)) {
+    return { kind: 'wall', label: '', color: '#8796a8' };
+  }
+  if (
+    tool === 'floor' ||
+    tool === 'floor-detail' ||
+    tool === 'dirt' ||
+    tool === 'terrain-1' ||
+    tool === 'terrain-2' ||
+    tool === 'arena-floor' ||
+    tool === 'arena-floor-detail' ||
+    tool === 'arena-stairs' ||
+    tool === 'arena-stairs-corner' ||
+    tool === 'arena-stairs-corner-inner'
+  ) {
+    return { kind: 'tile', label: '', color: tool === 'dirt' ? '#8a6544' : '#4e7d5a' };
+  }
+  if (
+    tool.startsWith('tree') ||
+    tool.startsWith('bush') ||
+    tool.startsWith('grass') ||
+    tool.startsWith('plant') ||
+    (isForestPackItemKey(tool) && !tool.startsWith('forest-rock'))
+  ) {
+    return { kind: 'nature', label: '', color: '#62b46f' };
+  }
+  if (tool.startsWith('rock') || tool.startsWith('mountain') || tool === 'rocks' || tool === 'stones' || tool.startsWith('forest-rock')) {
+    return { kind: 'rock', label: '', color: '#9aa3ad' };
+  }
+  if (isArenaModelKey(tool)) {
+    return { kind: 'prop', label: '', color: '#e7b087' };
+  }
+  if (tool === 'trap') {
+    return { kind: 'trap', label: '', color: '#e47d50' };
+  }
+
+  return { kind: 'prop', label: '', color: '#bd9b66' };
+}
+
+function getTemplateKeyForMapTool(tool: MapTool): TemplateKey | null {
+  switch (tool) {
+    case 'erase':
+      return null;
+    case 'enemy':
+      return 'character-orc';
+    case 'enemy-zombie':
+      return 'cube-zombie';
+    case 'enemy-captain':
+      return 'captain-barbarossa';
+    case 'enemy-giant':
+      return 'giant';
+    case 'enemy-skeleton':
+      return 'skeleton';
+    case 'enemy-demon':
+      return 'demon';
+    case 'player-spawn':
+      return 'character-human';
+    case 'exit':
+      return 'stairs';
+    case 'floor':
+    case 'floor-detail':
+    case 'wall':
+    case 'wall-half':
+    case 'wall-narrow':
+    case 'wall-opening':
+    case 'banner':
+    case 'column':
+    case 'barrel':
+    case 'dirt':
+    case 'rocks':
+    case 'stones':
+    case 'trap':
+    case 'wood-structure':
+    case 'wood-support':
+    case 'coin':
+    case 'chest':
+    case 'gate':
+    case 'tree-1':
+    case 'tree-2':
+    case 'tree-3':
+    case 'bush-1':
+    case 'bush-2':
+    case 'bush-3':
+    case 'grass-1':
+    case 'grass-2':
+    case 'plant-1':
+    case 'plant-4':
+    case 'plant-5':
+    case 'rock-1':
+    case 'rock-3':
+    case 'rock-6':
+    case 'mountain-1':
+    case 'mountain-2':
+    case 'mountain-3':
+    case 'terrain-1':
+    case 'terrain-2':
+      return tool;
+    default:
+      if (isForestPackItemKey(tool)) {
+        return tool;
+      }
+      return isArenaModelKey(tool) ? tool : null;
+  }
+}
+
+function getMapToolThumbnailRenderer() {
+  if (!mapToolThumbnailRenderer) {
+    mapToolThumbnailRenderer = new THREE.WebGLRenderer({
+      alpha: true,
+      antialias: true,
+      preserveDrawingBuffer: true,
+      powerPreference: 'low-power',
+    });
+    mapToolThumbnailRenderer.outputColorSpace = THREE.SRGBColorSpace;
+    mapToolThumbnailRenderer.setPixelRatio(1);
+    mapToolThumbnailRenderer.setSize(72, 72, false);
+    mapToolThumbnailRenderer.setClearColor(0x000000, 0);
+  }
+
+  return mapToolThumbnailRenderer;
+}
+
+function frameThumbnailObject(object: THREE.Object3D) {
+  const box = new THREE.Box3().setFromObject(object);
+  const size = new THREE.Vector3();
+  const center = new THREE.Vector3();
+  box.getSize(size);
+  box.getCenter(center);
+
+  object.position.sub(center);
+  const maxDimension = Math.max(size.x, size.y, size.z, 0.0001);
+  object.scale.multiplyScalar(1.55 / maxDimension);
+
+  const framedBox = new THREE.Box3().setFromObject(object);
+  const framedCenter = new THREE.Vector3();
+  framedBox.getCenter(framedCenter);
+  object.position.sub(framedCenter);
+}
+
+function getMapToolThumbnail(tool: MapTool) {
+  const cached = mapToolThumbnailCache.get(tool);
+  if (cached) {
+    return cached;
+  }
+
+  const templateKey = getTemplateKeyForMapTool(tool);
+  if (!templateKey) {
+    return '';
+  }
+
+  try {
+    const previewScene = new THREE.Scene();
+    const previewObject = cloneTemplate(
+      templateKey,
+      templateKey === 'character-human' || templateKey === 'character-orc' || isEnemyModelKey(templateKey),
+    );
+    previewObject.rotation.y = -Math.PI / 5;
+    if (
+      tool === 'floor' ||
+      tool === 'floor-detail' ||
+      tool === 'dirt' ||
+      tool === 'terrain-1' ||
+      tool === 'terrain-2' ||
+      tool === 'arena-floor' ||
+      tool === 'arena-floor-detail'
+    ) {
+      previewObject.rotation.y = Math.PI / 4;
+    }
+    frameThumbnailObject(previewObject);
+    previewScene.add(previewObject);
+    previewScene.add(new THREE.HemisphereLight('#ffffff', '#2c3a42', 2.4));
+    const light = new THREE.DirectionalLight('#fff4d6', 2.2);
+    light.position.set(3, 4, 5);
+    previewScene.add(light);
+
+    const camera = new THREE.OrthographicCamera(-1.05, 1.05, 1.05, -1.05, 0.1, 20);
+    camera.position.set(2.4, 2.1, 3.2);
+    camera.lookAt(0, 0, 0);
+
+    const thumbnailRenderer = getMapToolThumbnailRenderer();
+    thumbnailRenderer.render(previewScene, camera);
+    const url = thumbnailRenderer.domElement.toDataURL('image/png');
+    mapToolThumbnailCache.set(tool, url);
+    return url;
+  } catch {
+    return '';
+  }
+}
+
+function selectMapTool(tool: MapTool) {
+  currentMapTool = tool;
+  currentHoverPoint = null;
+  editorPresetEl.value = tool;
+  renderEditorControls();
+  syncEditorSceneHelpers();
+}
+
+function buildMapPalette() {
+  const palette = document.createElement('section');
+  palette.className = 'editor-palette';
+
+  const header = document.createElement('div');
+  header.className = 'editor-row-head';
+  header.innerHTML = '<strong>Palette</strong><small>drag to map</small>';
+  palette.append(header);
+
+  for (const groupConfig of MAP_PALETTE_GROUPS) {
+    const group = document.createElement('div');
+    group.className = 'editor-palette-group';
+
+    const label = document.createElement('span');
+    label.className = 'editor-palette-label';
+    label.textContent = groupConfig.label;
+    group.append(label);
+
+    const grid = document.createElement('div');
+    grid.className = 'editor-palette-grid';
+
+    for (const tool of groupConfig.tools) {
+      const button = document.createElement('button');
+      button.className = 'editor-palette-item';
+      button.type = 'button';
+      button.draggable = true;
+      button.dataset.active = String(currentMapTool === tool);
+      button.dataset.tool = tool;
+      const previewConfig = getMapToolPreview(tool);
+      const preview = document.createElement('span');
+      preview.className = 'editor-palette-preview';
+      preview.dataset.preview = previewConfig.kind;
+      preview.style.setProperty('--preview-color', previewConfig.color);
+      const thumbnailUrl = getMapToolThumbnail(tool);
+      if (thumbnailUrl) {
+        preview.dataset.preview = 'asset';
+        const image = document.createElement('img');
+        image.src = thumbnailUrl;
+        image.alt = '';
+        image.draggable = false;
+        preview.append(image);
+      } else {
+        preview.textContent = previewConfig.label;
+      }
+      const text = document.createElement('span');
+      text.className = 'editor-palette-text';
+      text.textContent = MAP_TOOL_LABELS[tool];
+      button.append(preview, text);
+      button.addEventListener('click', () => {
+        selectMapTool(tool);
+      });
+      button.addEventListener('dragstart', (event) => {
+        event.dataTransfer?.setData(MAP_TOOL_DRAG_TYPE, tool);
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'copy';
+        }
+        selectMapTool(tool);
+      });
+      grid.append(button);
+    }
+
+    group.append(grid);
+    palette.append(group);
+  }
+
+  return palette;
+}
+
 function rotateMapTool(step: number) {
   currentMapRotationQuarter = THREE.MathUtils.euclideanModulo(currentMapRotationQuarter + step, 4);
   currentHoverPoint = null;
@@ -3770,49 +5050,58 @@ function renderMapControls() {
 
   const stack = document.createElement('div');
   stack.className = 'editor-stack';
+  stack.append(buildMapPalette());
 
   const statusText = currentHoverPoint
     ? `Cursor ${currentHoverPoint.x.toFixed(1)}, ${currentHoverPoint.z.toFixed(1)} · Tool ${MAP_TOOL_LABELS[currentMapTool]}`
-    : `Tool ${MAP_TOOL_LABELS[currentMapTool]} · 커서를 바닥에 올리면 좌표가 표시됩니다.`;
+    : isTerrainBrushTool(currentMapTool)
+      ? `Tool ${MAP_TOOL_LABELS[currentMapTool]} · 드래그하면 원형 브러시로 지형을 칠합니다.`
+      : `Tool ${MAP_TOOL_LABELS[currentMapTool]} · 커서를 바닥에 올리면 좌표가 표시됩니다.`;
   stack.append(buildEditorNote(statusText, 'editor-status'));
 
-  const rotationCard = document.createElement('section');
-  rotationCard.className = 'editor-group';
+  if (!isTerrainBrushTool(currentMapTool)) {
+    const rotationCard = document.createElement('section');
+    rotationCard.className = 'editor-group';
 
-  const rotationHead = document.createElement('div');
-  rotationHead.className = 'editor-row-head';
-  rotationHead.innerHTML = `<strong>Rotation</strong><small>${currentMapRotationQuarter * 90}deg</small>`;
-  rotationCard.append(rotationHead);
+    const rotationHead = document.createElement('div');
+    rotationHead.className = 'editor-row-head';
+    rotationHead.innerHTML = `<strong>Rotation</strong><small>${currentMapRotationQuarter * 90}deg</small>`;
+    rotationCard.append(rotationHead);
 
-  const rotationButtons = document.createElement('div');
-  rotationButtons.className = 'editor-inline-buttons';
+    const rotationButtons = document.createElement('div');
+    rotationButtons.className = 'editor-inline-buttons';
 
-  const rotateLeft = document.createElement('button');
-  rotateLeft.className = 'editor-button';
-  rotateLeft.type = 'button';
-  rotateLeft.textContent = 'Rotate -90';
-  rotateLeft.addEventListener('click', () => {
-    rotateMapTool(-1);
-  });
+    const rotateLeft = document.createElement('button');
+    rotateLeft.className = 'editor-button';
+    rotateLeft.type = 'button';
+    rotateLeft.textContent = 'Rotate -90';
+    rotateLeft.addEventListener('click', () => {
+      rotateMapTool(-1);
+    });
 
-  const rotateRight = document.createElement('button');
-  rotateRight.className = 'editor-button';
-  rotateRight.type = 'button';
-  rotateRight.textContent = 'Rotate +90';
-  rotateRight.addEventListener('click', () => {
-    rotateMapTool(1);
-  });
+    const rotateRight = document.createElement('button');
+    rotateRight.className = 'editor-button';
+    rotateRight.type = 'button';
+    rotateRight.textContent = 'Rotate +90';
+    rotateRight.addEventListener('click', () => {
+      rotateMapTool(1);
+    });
 
-  rotationButtons.append(rotateLeft, rotateRight);
-  rotationCard.append(rotationButtons);
-  stack.append(rotationCard);
+    rotationButtons.append(rotateLeft, rotateRight);
+    rotationCard.append(rotationButtons);
+    stack.append(rotationCard);
+  }
 
   const stats = buildEditorNote(
-    `Floor ${dungeonMapConfig.floorTiles.length} · Wall ${dungeonMapConfig.walls.length} · Prop ${dungeonMapConfig.props.length} · Coin ${dungeonMapConfig.coins.length} · Enemy ${dungeonMapConfig.enemies.length}`,
+    `Floor ${dungeonMapConfig.floorTiles.length} · Terrain ${dungeonMapConfig.terrainPaints.length} · Wall ${dungeonMapConfig.walls.length} · Prop ${dungeonMapConfig.props.length} · Coin ${dungeonMapConfig.coins.length} · Enemy ${dungeonMapConfig.enemies.length}`,
   );
   stack.append(stats);
 
-  const tips = buildEditorNote('좌클릭 배치, 우클릭 삭제, R/F 회전. 수정 내용은 브라우저에 저장됩니다.');
+  const tips = buildEditorNote(
+    isTerrainBrushTool(currentMapTool)
+      ? '지형 브러시는 드래그로 스프레이처럼 칠합니다. 같은 곳을 반복해서 칠하면 레벨이 올라갑니다.'
+      : '빈 칸 좌클릭 배치, 오브젝트 클릭 선택, 선택 오브젝트 드래그 이동, 우클릭 삭제.',
+  );
   stack.append(tips);
 
   editorControlsEl.append(stack);
@@ -3823,17 +5112,21 @@ function renderEditorControls() {
     renderTransformControls();
     editorResetEl.textContent = '리셋';
     editorCopyEl.textContent = 'JSON 복사';
+    syncMapHistoryButtons();
     return;
   }
 
   renderMapControls();
   editorResetEl.textContent = '기본 맵';
   editorCopyEl.textContent = '맵 JSON 복사';
+  syncMapHistoryButtons();
 }
 
 function resetMapConfig() {
-  const defaults = cloneMapConfig(getActiveLevel()?.map ?? DEFAULT_MAP_CONFIG);
+  const before = cloneMapConfig(dungeonMapConfig);
+  const defaults = assignMissingMapEditorOrders(cloneMapConfig(getActiveLevel()?.map ?? DEFAULT_MAP_CONFIG));
   dungeonMapConfig.floorTiles = defaults.floorTiles;
+  dungeonMapConfig.terrainPaints = defaults.terrainPaints;
   dungeonMapConfig.walls = defaults.walls;
   dungeonMapConfig.props = defaults.props;
   dungeonMapConfig.coins = defaults.coins;
@@ -3842,7 +5135,9 @@ function resetMapConfig() {
   dungeonMapConfig.chest = defaults.chest;
   dungeonMapConfig.gate = defaults.gate;
   dungeonMapConfig.exit = defaults.exit;
+  pushMapHistory(before);
   persistMapConfig();
+  renderEditorLevelOptions();
 }
 
 async function copyMapConfig() {
@@ -3855,7 +5150,216 @@ async function copyMapConfig() {
   }
 }
 
+function getEditorLevelLabel(level: DungeonLevelConfig, index: number) {
+  const storedMaps = readStoredLevelMaps();
+  const hasLocalDraft = Boolean(storedMaps[level.id]);
+  const hasServerSave = serverLevelMaps.has(level.id);
+  const suffix = hasLocalDraft ? ' · 로컬 수정' : hasServerSave ? ' · 저장됨' : '';
+  return `${index + 1}. ${localize(level.name)}${suffix}`;
+}
+
+function renderEditorLevelOptions() {
+  editorLevelEl.replaceChildren();
+
+  for (const [index, level] of DUNGEON_LEVELS.entries()) {
+    const option = document.createElement('option');
+    option.value = level.id;
+    option.textContent = getEditorLevelLabel(level, index);
+    editorLevelEl.append(option);
+  }
+
+  editorLevelEl.value = getLevelStorageId(state.levelIndex);
+}
+
+function syncEditorLevelUrl(levelId: string) {
+  if (!startsInEditorMode) {
+    return;
+  }
+
+  const nextUrl = new URL(window.location.href);
+  nextUrl.searchParams.set('level', levelId);
+  window.history.replaceState({}, '', nextUrl);
+}
+
+function rebuildEditorLevelScene(message: string) {
+  clearSelectedMapItem();
+  dungeonMapConfig = loadMapConfig(currentEditedLevelIndex);
+  state.levelIndex = currentEditedLevelIndex;
+  clearMapHistory();
+  resetEditorCameraTarget(dungeonMapConfig.playerSpawn);
+  resetState({ preserveLevel: true, preserveMap: true });
+  createSceneAssets();
+  updateCamera();
+  syncHud();
+  renderEditorLevelOptions();
+  renderEditorControls();
+  syncEditorSceneHelpers();
+  updateEditorCursor();
+  setOverlay(message);
+}
+
+function selectEditorLevel(levelId: string) {
+  const nextIndex = DUNGEON_LEVELS.findIndex((level) => level.id === levelId);
+  if (nextIndex < 0 || nextIndex === currentEditedLevelIndex) {
+    return;
+  }
+
+  currentEditedLevelIndex = nextIndex;
+  syncEditorLevelUrl(levelId);
+  rebuildEditorLevelScene(`${localize(getLevelConfig(nextIndex).name)} 맵을 불러왔습니다.`);
+}
+
+function applyLevelSnapshots(snapshots: HeroJourneyLevelSnapshot[], replace = false) {
+  if (replace) {
+    serverLevelMaps.clear();
+  }
+
+  for (const snapshot of snapshots) {
+    const levelIndex = upsertLevelConfigFromSnapshot(snapshot);
+    if (snapshot.map) {
+      serverLevelMaps.set(snapshot.id, normalizeMapConfig(snapshot.map as Partial<DungeonMapConfig>, getLevelDefaultMap(levelIndex)));
+    } else {
+      serverLevelMaps.delete(snapshot.id);
+    }
+  }
+}
+
+async function loadPublishedLevelMaps() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/games/${GAME_SLUG}/levels`, {
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      return;
+    }
+
+    const json = (await response.json()) as ApiEnvelope<HeroJourneyLevelSnapshot[]>;
+    applyLevelSnapshots(json.data, true);
+  } catch {
+    // The built-in level data remains playable when the API is unavailable.
+  }
+}
+
+async function saveCurrentLevelMap() {
+  const level = getLevelConfig(state.levelIndex);
+  const token = getAccessToken();
+  if (!token) {
+    setOverlay('관리자 로그인 후 서버에 저장할 수 있습니다.');
+    return;
+  }
+
+  editorSaveEl.disabled = true;
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/admin/games/${GAME_SLUG}/levels/${encodeURIComponent(level.id)}`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ map: dungeonMapConfig }),
+    });
+    const json = (await response.json()) as ApiEnvelope<HeroJourneyLevelSnapshot>;
+
+    if (!response.ok) {
+      throw new Error((json as unknown as { error?: string }).error ?? 'Level save failed');
+    }
+
+    applyLevelSnapshots([json.data]);
+    clearPersistedMapConfig(level.id);
+    renderEditorLevelOptions();
+    setOverlay(`${localize(level.name)} 맵을 서버에 저장했습니다.`);
+  } catch (error) {
+    setOverlay(error instanceof Error ? error.message : '맵 저장에 실패했습니다.');
+  } finally {
+    editorSaveEl.disabled = false;
+  }
+}
+
+function buildCreateLevelInput(name: string): HeroJourneyLevelCreateInput {
+  const activeLevel = getActiveLevel();
+  return {
+    name: { ko: name, en: name },
+    biome: activeLevel.biome,
+    quest: {
+      ko: `${name}의 수호자를 배치하고 보물상자를 여세요.`,
+      en: `Place guardians in ${name} and open the treasure chest.`,
+    },
+    intro: {
+      ko: `${name} 레벨입니다. 현재 맵을 기반으로 새 저작을 시작합니다.`,
+      en: `${name}. Starting a new level from the current map.`,
+    },
+    clearText: {
+      ko: `${name} 클리어. 다음 레벨로 이동합니다.`,
+      en: `${name} cleared. Moving to the next level.`,
+    },
+    map: cloneMapConfig(dungeonMapConfig),
+  };
+}
+
+async function createLevelFromCurrentMap() {
+  const token = getAccessToken();
+  if (!token) {
+    setOverlay('관리자 로그인 후 레벨을 추가할 수 있습니다.');
+    return;
+  }
+
+  const name = window.prompt('새 레벨 이름', `새 레벨 ${DUNGEON_LEVELS.length + 1}`)?.trim();
+  if (!name) {
+    return;
+  }
+
+  editorAddLevelEl.disabled = true;
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/admin/games/${GAME_SLUG}/levels`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(buildCreateLevelInput(name)),
+    });
+    const json = (await response.json()) as ApiEnvelope<HeroJourneyLevelSnapshot>;
+
+    if (!response.ok) {
+      throw new Error((json as unknown as { error?: string }).error ?? 'Level create failed');
+    }
+
+    applyLevelSnapshots([json.data]);
+    const nextIndex = DUNGEON_LEVELS.findIndex((level) => level.id === json.data.id);
+    if (nextIndex >= 0) {
+      currentEditedLevelIndex = nextIndex;
+      syncEditorLevelUrl(json.data.id);
+      rebuildEditorLevelScene(`${localize(json.data.name)} 레벨을 추가했습니다.`);
+    }
+  } catch (error) {
+    setOverlay(error instanceof Error ? error.message : '레벨 추가에 실패했습니다.');
+  } finally {
+    editorAddLevelEl.disabled = false;
+  }
+}
+
+function startEditorPlayTest() {
+  clearSelectedMapItem();
+  resetState({ preserveLevel: true, preserveMap: true });
+  createSceneAssets();
+  updateCamera();
+  syncHud();
+  editorVisible = false;
+  syncEditorVisibility();
+  markStarted();
+  setOverlay(`${localize(getActiveLevel().name)} 테스트 플레이를 시작합니다.`);
+}
+
 function mountEditorUi() {
+  renderEditorLevelOptions();
+
+  editorLevelEl.addEventListener('change', () => {
+    selectEditorLevel(editorLevelEl.value);
+  });
+
   for (const mode of ['transform', 'map'] as EditorMode[]) {
     const option = document.createElement('option');
     option.value = mode;
@@ -3869,6 +5373,7 @@ function mountEditorUi() {
   editorModeEl.addEventListener('change', () => {
     currentEditorMode = editorModeEl.value as EditorMode;
     currentHoverPoint = null;
+    clearSelectedMapItem();
     renderEditorPresetOptions();
     renderEditorControls();
     syncEditorSceneHelpers();
@@ -3878,8 +5383,8 @@ function mountEditorUi() {
     if (currentEditorMode === 'transform') {
       currentEditorPreset = editorPresetEl.value as EditorPresetKey;
     } else {
-      currentMapTool = editorPresetEl.value as MapTool;
-      currentHoverPoint = null;
+      selectMapTool(editorPresetEl.value as MapTool);
+      return;
     }
     renderEditorControls();
     syncEditorSceneHelpers();
@@ -3887,7 +5392,16 @@ function mountEditorUi() {
 
   editorCloseEl.addEventListener('click', () => {
     editorVisible = false;
+    clearSelectedMapItem();
     syncEditorVisibility();
+  });
+
+  editorUndoEl.addEventListener('click', () => {
+    undoMapEdit();
+  });
+
+  editorRedoEl.addEventListener('click', () => {
+    redoMapEdit();
   });
 
   editorResetEl.addEventListener('click', () => {
@@ -3897,6 +5411,7 @@ function mountEditorUi() {
     }
 
     resetMapConfig();
+    clearSelectedMapItem();
     resetState({ preserveLevel: true, preserveMap: true });
     createSceneAssets();
     updateCamera();
@@ -3905,11 +5420,43 @@ function mountEditorUi() {
     setOverlay('맵을 기본 레이아웃으로 되돌렸습니다.');
   });
 
+  editorAddLevelEl.addEventListener('click', () => {
+    void createLevelFromCurrentMap();
+  });
+
   editorCopyEl.addEventListener('click', () => {
     void (currentEditorMode === 'transform' ? copyWeaponEditorState() : copyMapConfig());
   });
 
+  editorSaveEl.addEventListener('click', () => {
+    void saveCurrentLevelMap();
+  });
+
+  editorTestEl.addEventListener('click', () => {
+    startEditorPlayTest();
+  });
+
+  for (const button of [mapSelectionRotateLeftEl, mapSelectionRotateRightEl]) {
+    for (const eventName of ['pointerdown', 'pointerup', 'click', 'touchstart', 'touchend', 'mousedown', 'mouseup'] as const) {
+      button.addEventListener(eventName, (event) => {
+        event.stopPropagation();
+      });
+    }
+  }
+
+  mapSelectionRotateLeftEl.addEventListener('click', () => {
+    rotateSelectedMapItem(-1);
+  });
+
+  mapSelectionRotateRightEl.addEventListener('click', () => {
+    rotateSelectedMapItem(1);
+  });
+
   renderEditorControls();
+  clearMapHistory();
+  if (startsInEditorMode) {
+    editorVisible = true;
+  }
   syncEditorVisibility();
 }
 
@@ -3985,6 +5532,19 @@ function syncViewportCss(viewport: ResponsiveViewport) {
   document.body.classList.toggle('is-portrait-ui', viewport.isPortrait);
 }
 
+function getEffectiveViewSize() {
+  return viewportState.viewSize * (isMapEditorActive() ? editorCameraState.zoomScale : 1);
+}
+
+function applyCameraProjection() {
+  const viewSize = getEffectiveViewSize();
+  camera.left = (-viewSize * viewportState.aspect) / 2;
+  camera.right = (viewSize * viewportState.aspect) / 2;
+  camera.top = viewSize / 2;
+  camera.bottom = -viewSize / 2;
+  camera.updateProjectionMatrix();
+}
+
 function resizeRenderer() {
   const { width, height } = getViewportSize();
   viewportState = computeViewportState(width, height);
@@ -3993,15 +5553,12 @@ function resizeRenderer() {
   renderer.setPixelRatio(Math.min((window.devicePixelRatio || 1) * viewportState.renderScale, viewportState.isMobile ? 1.75 : 2));
   renderer.setSize(viewportState.width, viewportState.height, false);
 
-  camera.left = (-viewportState.viewSize * viewportState.aspect) / 2;
-  camera.right = (viewportState.viewSize * viewportState.aspect) / 2;
-  camera.top = viewportState.viewSize / 2;
-  camera.bottom = -viewportState.viewSize / 2;
-  camera.updateProjectionMatrix();
+  applyCameraProjection();
 
   if (editorVisible) {
     renderEditorControls();
   }
+  syncMapSelectionUi();
 }
 
 function prepareTemplate(root: THREE.Group) {
@@ -4070,6 +5627,64 @@ function normalizeBiomeTemplate(root: THREE.Group, config: { scale: number; stri
   wrapper.add(root);
   prepareTemplate(wrapper);
   return wrapper;
+}
+
+function normalizeForestPackItemTemplate(sourceRoot: THREE.Group, key: ForestPackItemKey) {
+  const config = FOREST_PACK_ITEM_CONFIGS[key];
+  const source = sourceRoot.getObjectByName(config.source);
+  if (!source) {
+    throw new Error(`Missing forest-pack source mesh: ${config.source}`);
+  }
+
+  const root = new THREE.Group();
+  root.add(source.clone(true));
+  return normalizeBiomeTemplate(root, { scale: FOREST_PACK_ITEM_SCALE });
+}
+
+function normalizeEnemyModelTemplate(root: THREE.Group, key: EnemyModelKey) {
+  return normalizeBiomeTemplate(root, ENEMY_MODEL_CONFIGS[key]);
+}
+
+function normalizeAnimationSearchName(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function findEnemyAnimationClip(animations: THREE.AnimationClip[], aliases: string[]) {
+  for (const alias of aliases) {
+    const normalizedAlias = normalizeAnimationSearchName(alias);
+    const exactMatch = animations.find(
+      (clip) => normalizeAnimationSearchName(clip.name.split('|').pop() ?? clip.name) === normalizedAlias,
+    );
+    if (exactMatch) {
+      return exactMatch;
+    }
+
+    const partialMatch = animations.find((clip) => normalizeAnimationSearchName(clip.name).includes(normalizedAlias));
+    if (partialMatch) {
+      return partialMatch;
+    }
+  }
+
+  return undefined;
+}
+
+function normalizeEnemyModelAnimations(animations: THREE.AnimationClip[]) {
+  const desiredClips: Array<{ name: CharacterAnimationName; aliases: string[] }> = [
+    { name: 'idle', aliases: ['idle'] },
+    { name: 'walk', aliases: ['walk', 'run'] },
+    { name: 'attack-melee-right', aliases: ['attack', 'sword', 'punch'] },
+  ];
+
+  return desiredClips.flatMap(({ name, aliases }) => {
+    const clip = findEnemyAnimationClip(animations, aliases);
+    if (!clip) {
+      return [];
+    }
+
+    const normalized = clip.clone();
+    normalized.name = name;
+    return [normalized];
+  });
 }
 
 function sanitizeCharacterAnimations(animations: THREE.AnimationClip[]) {
@@ -4239,10 +5854,50 @@ async function loadTemplates() {
   );
 
   await Promise.all(
+    ARENA_MODEL_KEYS.map(async (key) => {
+      const gltf = await loader.loadAsync(arenaModelUrl(key));
+      gltf.scene.scale.setScalar(ARENA_MODEL_CONFIGS[key].scale);
+      prepareTemplate(gltf.scene);
+      templates.set(key, {
+        scene: gltf.scene,
+        animations: gltf.animations,
+      });
+    }),
+  );
+
+  const forestPackRoot = await fbxLoader.loadAsync(forestPackModelUrl());
+  for (const key of Object.keys(FOREST_PACK_ITEM_CONFIGS) as ForestPackItemKey[]) {
+    templates.set(key, {
+      scene: normalizeForestPackItemTemplate(forestPackRoot, key),
+      animations: [],
+    });
+  }
+
+  await Promise.all(
+    (Object.keys(ENEMY_MODEL_CONFIGS) as EnemyModelKey[]).map(async (key) => {
+      const root = await fbxLoader.loadAsync(enemyModelUrl(key));
+      templates.set(key, {
+        scene: normalizeEnemyModelTemplate(root, key),
+        animations: normalizeEnemyModelAnimations(root.animations),
+      });
+    }),
+  );
+
+  await Promise.all(
     (Object.keys(BIOME_MODEL_CONFIGS) as BiomeModelKey[]).map(async (key) => {
+      const config = BIOME_MODEL_CONFIGS[key];
+      if (config.file.endsWith('.glb')) {
+        const gltf = await loader.loadAsync(biomeModelUrl(key));
+        templates.set(key, {
+          scene: normalizeBiomeTemplate(gltf.scene, config),
+          animations: gltf.animations,
+        });
+        return;
+      }
+
       const root = await fbxLoader.loadAsync(biomeModelUrl(key));
       templates.set(key, {
-        scene: normalizeBiomeTemplate(root, BIOME_MODEL_CONFIGS[key]),
+        scene: normalizeBiomeTemplate(root, config),
         animations: [],
       });
     }),
@@ -4261,7 +5916,7 @@ function cloneTemplate(name: TemplateKey, skinned = false) {
   return skinned ? (cloneSkinned(template.scene) as THREE.Group) : template.scene.clone(true);
 }
 
-function getTemplateAnimations(name: ModelKey) {
+function getTemplateAnimations(name: TemplateKey) {
   return templates.get(name)?.animations ?? [];
 }
 
@@ -4358,8 +6013,96 @@ function attachShieldToLeftArm(mesh: THREE.Group, shield: THREE.Group, shieldKey
   return mount;
 }
 
+function tintObjectMaterials(root: THREE.Object3D, tint: string, amount: number, emissive?: string) {
+  const tintColor = new THREE.Color(tint);
+  const emissiveColor = emissive ? new THREE.Color(emissive) : null;
+  root.traverse((node) => {
+    if (!(node instanceof THREE.Mesh)) {
+      return;
+    }
+
+    const materials = Array.isArray(node.material) ? node.material : [node.material];
+    const clonedMaterials = materials.map((material) => {
+      const cloned = material.clone();
+      if ('color' in cloned && cloned.color instanceof THREE.Color) {
+        cloned.color.lerp(tintColor, amount);
+      }
+      if (emissiveColor && 'emissive' in cloned && cloned.emissive instanceof THREE.Color) {
+        cloned.emissive.lerp(emissiveColor, 0.28);
+      }
+      if ('roughness' in cloned && typeof cloned.roughness === 'number') {
+        cloned.roughness = Math.min(1, cloned.roughness + 0.18);
+      }
+      return cloned;
+    });
+    node.material = Array.isArray(node.material) ? clonedMaterials : clonedMaterials[0]!;
+  });
+}
+
+function addZombieEyes(mesh: THREE.Group) {
+  const head = mesh.getObjectByName('head') ?? mesh;
+  const eyeMaterial = new THREE.MeshStandardMaterial({
+    color: '#ff6048',
+    emissive: '#ff2a18',
+    emissiveIntensity: 1.7,
+    roughness: 0.35,
+  });
+
+  for (const x of [-0.055, 0.055]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.026, 10, 8), eyeMaterial.clone());
+    eye.name = 'zombie-eye';
+    eye.position.set(x, 0.055, 0.11);
+    head.add(eye);
+  }
+}
+
+function applyZombieModeling(mesh: THREE.Group) {
+  tintObjectMaterials(mesh, '#6f9d61', 0.42, '#203a23');
+  addZombieEyes(mesh);
+
+  const torso = mesh.getObjectByName('torso');
+  const head = mesh.getObjectByName('head');
+  const armLeft = mesh.getObjectByName('arm-left');
+  const armRight = mesh.getObjectByName('arm-right');
+  const legLeft = mesh.getObjectByName('leg-left');
+  const legRight = mesh.getObjectByName('leg-right');
+
+  if (torso) {
+    torso.rotation.x += degToRad(10);
+  }
+  if (head) {
+    head.rotation.x += degToRad(8);
+  }
+  if (armLeft) {
+    armLeft.rotation.x -= degToRad(58);
+    armLeft.rotation.y -= degToRad(18);
+    armLeft.rotation.z += degToRad(18);
+  }
+  if (armRight) {
+    armRight.rotation.x -= degToRad(62);
+    armRight.rotation.y += degToRad(20);
+    armRight.rotation.z -= degToRad(18);
+  }
+  if (legLeft) {
+    legLeft.rotation.x += degToRad(6);
+  }
+  if (legRight) {
+    legRight.rotation.x -= degToRad(5);
+  }
+}
+
 function getEnemyLabel(kind: EnemyKind | undefined) {
   switch (kind) {
+    case 'zombie':
+      return t('enemyZombie');
+    case 'captain':
+      return t('enemyCaptain');
+    case 'giant':
+      return t('enemyGiant');
+    case 'skeleton':
+      return t('enemySkeleton');
+    case 'demon':
+      return t('enemyDemon');
     case 'scout':
       return t('enemyScout');
     case 'spearman':
@@ -4378,6 +6121,7 @@ function createCharacterRig(
   weaponMount: THREE.Group,
   weapon: THREE.Group,
   animations: THREE.AnimationClip[],
+  options: { variant?: 'zombie' } = {},
 ) {
   const mixer = new THREE.AnimationMixer(mesh);
   const actions = Object.fromEntries(
@@ -4401,7 +6145,9 @@ function createCharacterRig(
   ) as Partial<Record<CharacterAnimationName, THREE.AnimationAction>>;
 
   actions.idle?.play();
-  actions['holding-right']?.setEffectiveWeight(0.95).play();
+  if (options.variant !== 'zombie') {
+    actions['holding-right']?.setEffectiveWeight(0.95).play();
+  }
   const attackClip = animations.find((item) => item.name === 'attack-melee-right');
   const rollClip = animations.find((item) => item.name === 'roll');
 
@@ -4444,6 +6190,7 @@ function createCharacterRig(
     hurtMs: 0,
     rollMs: 0,
     rollDurationMs: rollClip ? Math.max(220, (rollClip.duration * 1000 * 0.68) / PLAYER_ROLL_ANIMATION_SPEED) : 280,
+    variant: options.variant,
   } satisfies CharacterRig;
 }
 
@@ -4478,6 +6225,51 @@ function transitionLocomotion(rig: CharacterRig, next: 'idle' | 'walk', fadeMs =
 
   nextAction?.reset().fadeIn(fadeMs / 1000).play();
   rig.locomotion = next;
+}
+
+function applyZombieRigPose(rig: CharacterRig, attackSwing: number, deltaSeconds: number) {
+  const torso = rig.bones.torso;
+  const head = rig.bones.head;
+  const armLeft = rig.bones.armLeft;
+  const armRight = rig.bones.armRight;
+  const legLeft = rig.bones.legLeft;
+  const legRight = rig.bones.legRight;
+  const shamble = Math.sin(performance.now() * 0.005) * THREE.MathUtils.clamp(rig.moveSpeed / 1.2, 0, 1);
+
+  if (torso) {
+    torso.node.rotation.copy(torso.rotation);
+    torso.node.rotation.x += 0.28;
+    torso.node.rotation.z += shamble * 0.08;
+  }
+  if (head) {
+    head.node.rotation.copy(head.rotation);
+    head.node.rotation.x += 0.18;
+    head.node.rotation.y += shamble * 0.12;
+  }
+  if (armLeft) {
+    armLeft.node.rotation.copy(armLeft.rotation);
+    armLeft.node.rotation.x -= 1.22 + attackSwing * 0.24;
+    armLeft.node.rotation.y -= 0.38;
+    armLeft.node.rotation.z += 0.28 + shamble * 0.08;
+  }
+  if (armRight) {
+    armRight.node.rotation.copy(armRight.rotation);
+    armRight.node.rotation.x -= 1.34 + attackSwing * 0.42;
+    armRight.node.rotation.y += 0.36;
+    armRight.node.rotation.z -= 0.26 + shamble * 0.08;
+  }
+  if (legLeft) {
+    legLeft.node.rotation.copy(legLeft.rotation);
+    legLeft.node.rotation.x += shamble * 0.16;
+  }
+  if (legRight) {
+    legRight.node.rotation.copy(legRight.rotation);
+    legRight.node.rotation.x -= shamble * 0.16;
+  }
+
+  rig.weapon.node.visible = false;
+  rig.weapon.blade.visible = false;
+  rig.actor.node.rotation.z += THREE.MathUtils.lerp(0, shamble * 0.045, Math.min(1, deltaSeconds * 8));
 }
 
 function startAttackAnimation(rig: CharacterRig) {
@@ -4563,7 +6355,8 @@ function updateRigAnimation(
 
   rig.mixer.update(deltaSeconds);
 
-  rig.actor.node.position.y = 0;
+  const baseGroundY = getGroundHeightAt(rig.actor.node.position.x, rig.actor.node.position.z);
+  rig.actor.node.position.y = baseGroundY;
   rig.actor.node.rotation.x = 0;
   rig.actor.node.rotation.z = 0;
 
@@ -4623,7 +6416,11 @@ function updateRigAnimation(
         rollAction?.fadeOut(PLAYER_ROLL_EXIT_BLEND_MS / 1000);
         transitionLocomotion(rig, nextLocomotion, PLAYER_ROLL_EXIT_BLEND_MS);
       }
-      if (rig.blocking) {
+      if (rig.variant === 'zombie') {
+        rig.actions['holding-right']?.stop();
+        rig.actions['holding-both']?.stop();
+        rig.guarding = false;
+      } else if (rig.blocking) {
         rig.actions['holding-both']?.reset().fadeIn(PLAYER_ROLL_EXIT_BLEND_MS / 1000).play();
         rig.guarding = true;
       } else {
@@ -4636,13 +6433,13 @@ function updateRigAnimation(
         targetRollVisualLift,
         Math.min(1, deltaSeconds * 26),
       );
-      rig.actor.node.position.y = rig.rollVisualLift;
+      rig.actor.node.position.y = baseGroundY + rig.rollVisualLift;
       return;
     }
   }
 
   rig.rollVisualLift = THREE.MathUtils.lerp(rig.rollVisualLift, targetRollVisualLift, Math.min(1, deltaSeconds * 14));
-  rig.actor.node.position.y = rig.rollVisualLift;
+  rig.actor.node.position.y = baseGroundY + rig.rollVisualLift;
   if (!rig.rolling && rig.rollRecoverMs <= 0) {
     rollAction?.stop();
   }
@@ -4680,7 +6477,11 @@ function updateRigAnimation(
   if (rig.attacking && attackAction && attackAction.time >= attackAction.getClip().duration - 0.02) {
     attackAction.stop();
     rig.attacking = false;
-    if (rig.blocking) {
+    if (rig.variant === 'zombie') {
+      rig.actions['holding-right']?.stop();
+      rig.actions['holding-both']?.stop();
+      rig.guarding = false;
+    } else if (rig.blocking) {
       rig.actions['holding-both']?.reset().fadeIn(0.08).play();
       rig.guarding = true;
     } else {
@@ -4755,6 +6556,10 @@ function updateRigAnimation(
   if (head && blockStrength > 0) {
     head.node.rotation.copy(head.rotation);
     head.node.rotation.y += 0.08 * blockStrength;
+  }
+
+  if (rig.variant === 'zombie') {
+    applyZombieRigPose(rig, attackSwing, deltaSeconds);
   }
 }
 
@@ -4880,6 +6685,97 @@ function spawnEffect(position: THREE.Vector3, color: string) {
   });
 }
 
+function randomBetween(minimum: number, maximum: number) {
+  return minimum + Math.random() * (maximum - minimum);
+}
+
+function pushMagicParticle(particle: MagicParticle) {
+  if (magicParticles.length >= MAGIC_PARTICLE_MAX) {
+    magicParticles.shift();
+  }
+
+  magicParticles.push(particle);
+}
+
+function spawnMagicParticle(
+  position: THREE.Vector3,
+  velocity: THREE.Vector3,
+  color: THREE.Color,
+  radius: number,
+  intensity: number,
+  core: number,
+  lifeMs: number,
+  drag: number,
+) {
+  pushMagicParticle({
+    position: position.clone(),
+    velocity: velocity.clone(),
+    color: color.clone(),
+    maxLifeMs: lifeMs,
+    remainingMs: lifeMs,
+    radius,
+    intensity,
+    core,
+    drag,
+  });
+}
+
+function spawnMagicTrailBetween(from: THREE.Vector3, to: THREE.Vector3, owner: MagicProjectileOwner) {
+  const movement = to.clone().sub(from);
+  const distance = movement.length();
+  if (distance < 0.015) {
+    return;
+  }
+
+  const direction = movement.normalize();
+  const side = new THREE.Vector3(-direction.z, 0, direction.x);
+  const spawnCount = Math.round(THREE.MathUtils.clamp(distance / 0.16, 2, 7));
+  const ownerTint = owner === 'remote' ? new THREE.Color('#919df0') : MAGIC_TRAIL_COLOR;
+
+  for (let index = 0; index < spawnCount; index += 1) {
+    const along = spawnCount <= 1 ? 1 : index / (spawnCount - 1);
+    const position = from.clone().lerp(to, along);
+    position.addScaledVector(side, randomBetween(-0.045, 0.045));
+    position.y += randomBetween(-0.02, 0.03);
+
+    const velocity = direction
+      .clone()
+      .multiplyScalar(randomBetween(-0.2, 0.35))
+      .addScaledVector(side, randomBetween(-0.7, 0.7))
+      .add(new THREE.Vector3(0, randomBetween(-0.08, 0.24), 0));
+    const color = Math.random() < 0.52 ? ownerTint : MAGIC_PARTICLE_COLORS[Math.floor(Math.random() * MAGIC_PARTICLE_COLORS.length)];
+    const radius = randomBetween(0.09, 0.28);
+    const intensity = randomBetween(0.16, 0.48);
+
+    spawnMagicParticle(position, velocity, color, radius, intensity, randomBetween(0.045, 0.13), randomBetween(240, 520), randomBetween(0.9, 0.97));
+  }
+}
+
+function spawnMagicBurst(position: THREE.Vector3, scale = 1) {
+  const center = position.clone();
+  center.y += 0.03;
+
+  for (let index = 0; index < Math.round(20 * scale); index += 1) {
+    const angle = randomBetween(0, Math.PI * 2);
+    const speed = randomBetween(0.8, 2.8) * scale;
+    const velocity = new THREE.Vector3(Math.cos(angle) * speed, randomBetween(-0.12, 0.78) * scale, Math.sin(angle) * speed);
+    const color = index % 4 === 0 ? MAGIC_CAST_COLOR : MAGIC_PARTICLE_COLORS[Math.floor(Math.random() * MAGIC_PARTICLE_COLORS.length)];
+
+    spawnMagicParticle(
+      center.clone().add(new THREE.Vector3(randomBetween(-0.04, 0.04), randomBetween(-0.02, 0.08), randomBetween(-0.04, 0.04))),
+      velocity,
+      color,
+      randomBetween(0.12, 0.34) * scale,
+      randomBetween(0.22, 0.66),
+      randomBetween(0.07, 0.2),
+      randomBetween(300, 700),
+      randomBetween(0.88, 0.96),
+    );
+  }
+
+  spawnMagicParticle(center, new THREE.Vector3(0, 0.12 * scale, 0), MAGIC_CAST_COLOR, 0.42 * scale, 0.48, 0.16, 360, 0.92);
+}
+
 function getPlayerCastOrigin() {
   if (!sceneAssets) {
     return null;
@@ -4896,6 +6792,9 @@ function getPlayerCastOrigin() {
 }
 
 function clearMagicProjectiles() {
+  magicParticles.length = 0;
+  magicParticleMesh.count = 0;
+
   for (const projectile of magicProjectiles.splice(0, magicProjectiles.length)) {
     scene.remove(projectile.mesh);
     projectile.mesh.geometry.dispose();
@@ -4911,15 +6810,18 @@ function spawnMagicProjectile(direction: THREE.Vector3, owner: MagicProjectileOw
     return;
   }
 
-  const geometry = new THREE.SphereGeometry(0.16, 14, 14);
+  const geometry = new THREE.SphereGeometry(0.08, 10, 10);
   const material = new THREE.MeshBasicMaterial({
-    color: '#7ae2ff',
+    color: '#c8fbff',
     transparent: true,
-    opacity: 0.96,
+    opacity: 0.68,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.copy(origin);
   scene.add(mesh);
+  spawnMagicBurst(origin, 0.55);
   magicProjectiles.push({
     mesh,
     velocity: direction.clone().multiplyScalar(7.6),
@@ -4927,6 +6829,8 @@ function spawnMagicProjectile(direction: THREE.Vector3, owner: MagicProjectileOw
     damage: owner === 'local' && gameMode === 'duel' ? DUEL_MAGIC_DAMAGE : 2,
     remainingMs: 1300,
     owner,
+    previousPosition: origin.clone(),
+    trailAccumulatorMs: 0,
   });
 }
 
@@ -4950,17 +6854,221 @@ function addWallObstacle(wall: WallSegmentConfig) {
   });
 }
 
+function usesMiniArenaStyle() {
+  return getActiveLevel()?.id === 'gate-hall' || dungeonMapConfig.props.some((prop) => isArenaModelKey(prop.key));
+}
+
+function getFloorTemplateKey(detail = false): TemplateKey {
+  if (usesMiniArenaStyle()) {
+    return detail ? 'arena-floor-detail' : 'arena-floor';
+  }
+
+  return detail ? 'floor-detail' : 'floor';
+}
+
+function getWallTemplateKey(half = false, opening = false, narrow = false): TemplateKey {
+  if (usesMiniArenaStyle()) {
+    return opening ? 'arena-wall-gate' : 'arena-wall';
+  }
+
+  return opening ? 'wall-opening' : half ? 'wall-half' : narrow ? 'wall-narrow' : 'wall';
+}
+
+function getGateTemplateKey(): TemplateKey {
+  return usesMiniArenaStyle() ? 'arena-wall-gate' : 'gate';
+}
+
+function getExitStairsTemplateKey(): TemplateKey {
+  return usesMiniArenaStyle() ? 'arena-stairs' : 'stairs';
+}
+
 function addFloorTile(world: THREE.Group, x: number, z: number, detail = false) {
-  const tile = cloneTemplate(detail ? 'floor-detail' : 'floor');
+  const tile = cloneTemplate(getFloorTemplateKey(detail));
   tile.position.set(x, 0, z);
   world.add(tile);
 }
 
+function getTerrainPaintMaterial(kind: TerrainPaintKind, accent = '') {
+  const config = TERRAIN_PAINT_CONFIGS[kind];
+  const key = `${kind}:${accent || config.color}`;
+  let material = terrainPaintMaterials.get(key);
+  if (!material) {
+    material = new THREE.MeshStandardMaterial({
+      color: accent || config.color,
+      roughness: config.roughness ?? 1,
+      metalness: 0,
+      flatShading: true,
+      transparent: kind === 'water',
+      opacity: kind === 'water' ? 0.82 : 1,
+    });
+    terrainPaintMaterials.set(key, material);
+  }
+  return material;
+}
+
+function getTerrainWaterMaterial() {
+  if (!terrainWaterMaterial) {
+    terrainWaterMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uColorDeep: { value: new THREE.Color('#216d8e') },
+        uColorShallow: { value: new THREE.Color('#58b9cc') },
+        uFoam: { value: new THREE.Color('#c8f6ff') },
+        uOpacity: { value: 0.76 },
+      },
+      vertexShader: `
+        uniform float uTime;
+        varying vec2 vUv;
+        varying float vWave;
+
+        void main() {
+          vUv = uv;
+          vec3 transformed = position;
+          float waveA = sin((position.x * 8.0) + uTime * 1.8) * 0.014;
+          float waveB = sin((position.z * 11.0) - uTime * 2.3) * 0.008;
+          float ripple = sin((position.x + position.z) * 16.0 + uTime * 3.6) * 0.004;
+          vWave = waveA + waveB + ripple;
+          transformed.y += vWave;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uColorDeep;
+        uniform vec3 uColorShallow;
+        uniform vec3 uFoam;
+        uniform float uOpacity;
+        uniform float uTime;
+        varying vec2 vUv;
+        varying float vWave;
+
+        void main() {
+          float flow = sin((vUv.x * 18.0) - uTime * 1.7) * 0.5 + 0.5;
+          float cross = sin((vUv.y * 22.0) + uTime * 2.1) * 0.5 + 0.5;
+          float foamLine = smoothstep(0.92, 1.0, flow * cross);
+          vec3 color = mix(uColorDeep, uColorShallow, 0.45 + vWave * 8.0);
+          color = mix(color, uFoam, foamLine * 0.42);
+          gl_FragColor = vec4(color, uOpacity);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+  }
+
+  return terrainWaterMaterial;
+}
+
+function getTerrainPaintHeight(kind: TerrainPaintKind, level: number) {
+  const config = TERRAIN_PAINT_CONFIGS[kind];
+  return config.baseHeight + (normalizeTerrainPaintLevel(kind, level) - 1) * config.heightStep;
+}
+
+function isConnectiveTerrainKind(kind: TerrainPaintKind) {
+  return kind === 'stone-path' || kind === 'dirt-path' || kind === 'water';
+}
+
+function getTerrainPaintRadius(kind: TerrainPaintKind) {
+  return isConnectiveTerrainKind(kind) ? 0.34 : 0.48;
+}
+
+function getTerrainPaintThickness(kind: TerrainPaintKind, height: number) {
+  if (kind === 'water') {
+    return 0.018;
+  }
+  if (isConnectiveTerrainKind(kind)) {
+    return 0.024;
+  }
+  return Math.max(0.028, Math.abs(height));
+}
+
+function addTerrainPaintSurface(paint: TerrainPaintConfig) {
+  const height = getTerrainPaintHeight(paint.kind, paint.level);
+  if (Math.abs(height) < 0.001 || isConnectiveTerrainKind(paint.kind) && paint.kind !== 'water') {
+    return;
+  }
+
+  terrainSurfaceAreas.push({
+    x: paint.x,
+    z: paint.z,
+    radius: isConnectiveTerrainKind(paint.kind) ? 0.38 : 0.62,
+    height,
+  });
+}
+
+function addTerrainPaintMesh(world: THREE.Group, paint: TerrainPaintConfig) {
+  const height = getTerrainPaintHeight(paint.kind, paint.level);
+  const thickness = getTerrainPaintThickness(paint.kind, height);
+  const radius = getTerrainPaintRadius(paint.kind);
+  const isWater = paint.kind === 'water';
+  const mesh = isWater
+    ? new THREE.Mesh(terrainWaterDiskGeometry, getTerrainWaterMaterial())
+    : new THREE.Mesh(terrainPaintDiskGeometry, getTerrainPaintMaterial(paint.kind));
+  mesh.position.set(paint.x, isWater ? height + 0.012 : thickness / 2 + 0.006, paint.z);
+  if (isWater) {
+    mesh.scale.set(radius / 0.5, radius / 0.5, 1);
+    mesh.renderOrder = 2;
+  } else {
+    mesh.scale.set(radius / 0.5, thickness, radius / 0.5);
+  }
+  mesh.receiveShadow = true;
+  mesh.castShadow = false;
+  world.add(mesh);
+
+  if (paint.kind === 'flowers') {
+    const flowerColors = ['#f4d35e', '#ef6f8f', '#f8f0a5'];
+    for (let index = 0; index < 3; index += 1) {
+      const flower = new THREE.Mesh(terrainPaintDiskGeometry, getTerrainPaintMaterial(paint.kind, flowerColors[index]!));
+      const angle = index * 2.15 + paint.x * 0.7 + paint.z * 0.3;
+      flower.position.set(paint.x + Math.cos(angle) * 0.16, thickness + 0.014, paint.z + Math.sin(angle) * 0.14);
+      flower.scale.set(0.09, 0.01, 0.09);
+      flower.receiveShadow = false;
+      flower.castShadow = false;
+      world.add(flower);
+    }
+  }
+
+  addTerrainPaintSurface(paint);
+}
+
+function addTerrainPaintLink(world: THREE.Group, paint: TerrainPaintConfig, neighbor: TerrainPaintConfig) {
+  if (paint.kind !== neighbor.kind || !isConnectiveTerrainKind(paint.kind)) {
+    return;
+  }
+
+  const dx = neighbor.x - paint.x;
+  const dz = neighbor.z - paint.z;
+  const distance = Math.hypot(dx, dz);
+  if (distance <= 0.001 || distance > TERRAIN_BRUSH_CELL_SIZE + 0.01) {
+    return;
+  }
+
+  const height = getTerrainPaintHeight(paint.kind, Math.max(paint.level, neighbor.level));
+  const thickness = getTerrainPaintThickness(paint.kind, height);
+  const width = paint.kind === 'water' ? 0.44 : 0.36;
+  const isWater = paint.kind === 'water';
+  const mesh = isWater
+    ? new THREE.Mesh(terrainWaterLinkGeometry, getTerrainWaterMaterial())
+    : new THREE.Mesh(terrainPaintLinkGeometry, getTerrainPaintMaterial(paint.kind));
+  mesh.position.set((paint.x + neighbor.x) / 2, isWater ? height + 0.012 : thickness / 2 + 0.004, (paint.z + neighbor.z) / 2);
+  mesh.rotation.y = Math.atan2(dx, dz);
+  if (isWater) {
+    mesh.scale.set(width, distance + width * 0.6, 1);
+    mesh.renderOrder = 2;
+  } else {
+    mesh.scale.set(width, thickness, distance + width * 0.6);
+  }
+  mesh.receiveShadow = true;
+  mesh.castShadow = false;
+  world.add(mesh);
+}
+
 function addWallSegment(world: THREE.Group, x: number, z: number, rotationY = 0, half = false, opening = false, narrow = false) {
-  const wall = cloneTemplate(opening ? 'wall-opening' : half ? 'wall-half' : narrow ? 'wall-narrow' : 'wall');
+  const wall = cloneTemplate(getWallTemplateKey(half, opening, narrow));
   wall.position.set(x, 0, z);
   wall.rotation.y = rotationY;
   world.add(wall);
+  return wall;
 }
 
 function rotationQuarterToRadians(rotationQuarter = 0) {
@@ -4975,7 +7083,115 @@ function getMapPointVector(point: GridPoint, y = 0) {
   return new THREE.Vector3(point.x, y, point.z);
 }
 
+function isTerrainGroundKey(key: JourneyPropKey | MapTool) {
+  return (
+    key === 'terrain-1' ||
+    key === 'terrain-2' ||
+    key === 'arena-stairs' ||
+    key === 'arena-stairs-corner' ||
+    key === 'arena-stairs-corner-inner'
+  );
+}
+
+function getTerrainFallbackHeight(key: JourneyPropKey) {
+  switch (key) {
+    case 'terrain-2':
+      return 0.58;
+    case 'terrain-1':
+      return 0.42;
+    case 'arena-stairs':
+    case 'arena-stairs-corner':
+    case 'arena-stairs-corner-inner':
+      return 0.36;
+    default:
+      return 0;
+  }
+}
+
+function getTerrainSurfaceRadius(key: JourneyPropKey) {
+  switch (key) {
+    case 'terrain-2':
+      return 3.1;
+    case 'terrain-1':
+      return 2.8;
+    case 'arena-stairs':
+    case 'arena-stairs-corner':
+    case 'arena-stairs-corner-inner':
+      return 1.25;
+    default:
+      return 0;
+  }
+}
+
+function addTerrainGroundSurface(mesh: THREE.Object3D, prop: PropConfig) {
+  if (!isTerrainGroundKey(prop.key)) {
+    return;
+  }
+
+  terrainGroundMeshes.push(mesh);
+  terrainSurfaceAreas.push({
+    x: prop.x,
+    z: prop.z,
+    radius: getTerrainSurfaceRadius(prop.key),
+    height: getTerrainFallbackHeight(prop.key),
+  });
+}
+
+function getFallbackTerrainHeightAt(x: number, z: number) {
+  let positiveHeight = 0;
+  let negativeHeight = 0;
+  for (const area of terrainSurfaceAreas) {
+    if (area.radius <= 0 || Math.abs(area.height) <= 0.001) {
+      continue;
+    }
+
+    const distance = Math.hypot(x - area.x, z - area.z);
+    if (distance > area.radius) {
+      continue;
+    }
+
+    const falloffStart = area.radius * 0.62;
+    const rawInfluence =
+      distance <= falloffStart
+        ? 1
+        : 1 - (distance - falloffStart) / Math.max(0.0001, area.radius - falloffStart);
+    const influence = THREE.MathUtils.smoothstep(THREE.MathUtils.clamp(rawInfluence, 0, 1), 0, 1);
+    const contribution = area.height * influence;
+    if (contribution >= 0) {
+      positiveHeight = Math.max(positiveHeight, contribution);
+    } else {
+      negativeHeight = Math.min(negativeHeight, contribution);
+    }
+  }
+
+  return positiveHeight > 0 ? positiveHeight : negativeHeight;
+}
+
+function getGroundHeightAt(x: number, z: number) {
+  if (terrainGroundMeshes.length > 0) {
+    groundHeightRaycaster.set(new THREE.Vector3(x, 12, z), new THREE.Vector3(0, -1, 0));
+    groundHeightRaycaster.near = 0;
+    groundHeightRaycaster.far = 16;
+
+    const hits = groundHeightRaycaster.intersectObjects(terrainGroundMeshes, true);
+    const terrainHit = hits.find((hit) => hit.point.y >= -0.08 && hit.point.y <= 8);
+    if (terrainHit) {
+      return Math.max(getFallbackTerrainHeightAt(x, z), terrainHit.point.y);
+    }
+  }
+
+  return getFallbackTerrainHeightAt(x, z);
+}
+
+function getGroundedMapPointVector(point: GridPoint, yOffset = 0) {
+  return getMapPointVector(point, getGroundHeightAt(point.x, point.z) + yOffset);
+}
+
 function getPropRadius(key: PropConfig['key']) {
+  if (isForestPackItemKey(key)) {
+    return FOREST_PACK_ITEM_CONFIGS[key].radius;
+  }
+
   switch (key) {
     case 'forest-pack':
     case 'grass-1':
@@ -5002,6 +7218,34 @@ function getPropRadius(key: PropConfig['key']) {
     case 'mountain-2':
     case 'mountain-3':
       return 1.15;
+    case 'arena-floor':
+    case 'arena-floor-detail':
+    case 'arena-stairs':
+    case 'arena-stairs-corner':
+    case 'arena-stairs-corner-inner':
+      return 0;
+    case 'arena-banner':
+    case 'arena-weapon-spear':
+    case 'arena-weapon-sword':
+      return 0.22;
+    case 'arena-block':
+    case 'arena-border-straight':
+    case 'arena-border-corner':
+    case 'arena-bricks':
+      return 0.32;
+    case 'arena-column':
+    case 'arena-column-damaged':
+    case 'arena-wall':
+    case 'arena-wall-corner':
+    case 'arena-wall-gate':
+    case 'arena-soldier':
+    case 'arena-trophy':
+    case 'arena-weapon-rack':
+      return 0.44;
+    case 'arena-statue':
+      return 0.5;
+    case 'arena-tree':
+      return 0.62;
     case 'banner':
       return 0.18;
     case 'column':
@@ -5049,6 +7293,17 @@ function snapWallPoint(point: THREE.Vector3, rotationQuarter: number) {
       } satisfies GridPoint);
 }
 
+function snapTerrainBrushPoint(point: THREE.Vector3) {
+  return {
+    x: THREE.MathUtils.clamp(Math.round(point.x / TERRAIN_BRUSH_CELL_SIZE) * TERRAIN_BRUSH_CELL_SIZE, -10, 10),
+    z: THREE.MathUtils.clamp(Math.round(point.z / TERRAIN_BRUSH_CELL_SIZE) * TERRAIN_BRUSH_CELL_SIZE, -12, 11),
+  } satisfies GridPoint;
+}
+
+function terrainPaintCellKey(point: GridPoint) {
+  return `${Math.round(point.x / TERRAIN_BRUSH_CELL_SIZE)}:${Math.round(point.z / TERRAIN_BRUSH_CELL_SIZE)}`;
+}
+
 function getSnappedPointForTool(point: THREE.Vector3, tool: MapTool, rotationQuarter = currentMapRotationQuarter) {
   if (tool === 'gate') {
     return {
@@ -5068,17 +7323,41 @@ function getSnappedPointForTool(point: THREE.Vector3, tool: MapTool, rotationQua
     return snapWallPoint(point, rotationQuarter);
   }
 
+  if (isTerrainBrushTool(tool)) {
+    return snapTerrainBrushPoint(point);
+  }
+
   return snapCenterPoint(point);
 }
 
 function updateEditorCursor() {
   if (!isMapEditorActive() || !currentHoverPoint) {
     editorCursor.visible = false;
+    editorBrushCursor.visible = false;
     return;
   }
 
+  const terrainKind = getTerrainPaintKindForTool(currentMapTool);
+  if (terrainKind) {
+    const config = TERRAIN_PAINT_CONFIGS[terrainKind];
+    const brushRadius = terrainKind === 'stone-path' || terrainKind === 'dirt-path' || terrainKind === 'water' ? TERRAIN_PATH_RADIUS : TERRAIN_BRUSH_RADIUS;
+    editorCursor.visible = false;
+    editorBrushCursor.visible = true;
+    editorBrushCursor.position.set(
+      currentHoverPoint.x,
+      getGroundHeightAt(currentHoverPoint.x, currentHoverPoint.z) + 0.08,
+      currentHoverPoint.z,
+    );
+    editorBrushCursor.scale.setScalar(brushRadius);
+    if (editorBrushCursor.material instanceof THREE.MeshBasicMaterial) {
+      editorBrushCursor.material.color.set(config.color);
+    }
+    return;
+  }
+
+  editorBrushCursor.visible = false;
   editorCursor.visible = true;
-  editorCursor.position.set(currentHoverPoint.x, 0.06, currentHoverPoint.z);
+  editorCursor.position.set(currentHoverPoint.x, getGroundHeightAt(currentHoverPoint.x, currentHoverPoint.z) + 0.06, currentHoverPoint.z);
   editorCursor.rotation.x = -Math.PI / 2;
   editorCursor.rotation.y =
     currentMapTool === 'gate'
@@ -5113,18 +7392,434 @@ function syncMapHoverFromWorldPoint(point: THREE.Vector3 | null) {
   }
 }
 
-function getGroundPointFromClient(clientX: number, clientY: number) {
+function setRaycasterFromClient(clientX: number, clientY: number) {
   const rect = canvas.getBoundingClientRect();
   pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -(((clientY - rect.top) / rect.height) * 2 - 1);
   raycaster.setFromCamera(pointer, camera);
+}
+
+function getFlatGroundPointFromClient(clientX: number, clientY: number) {
+  setRaycasterFromClient(clientX, clientY);
+  const destination = new THREE.Vector3();
+  return raycaster.ray.intersectPlane(groundPlane, destination) ? destination : null;
+}
+
+function getEditorSelectionTargetAtClient(clientX: number, clientY: number) {
+  if (!isMapEditorActive() || editorSelectionTargets.length === 0) {
+    return null;
+  }
+
+  setRaycasterFromClient(clientX, clientY);
+  const hits = raycaster.intersectObjects(
+    editorSelectionTargets.map((target) => target.root),
+    true,
+  );
+
+  for (const hit of hits) {
+    let node: THREE.Object3D | null = hit.object;
+    while (node) {
+      const matched = editorSelectionTargets.find((target) => target.root === node);
+      if (matched) {
+        return matched;
+      }
+      node = node.parent;
+    }
+  }
+
+  return null;
+}
+
+function getGroundPointFromClient(clientX: number, clientY: number) {
+  setRaycasterFromClient(clientX, clientY);
+
+  if (terrainGroundMeshes.length > 0) {
+    const terrainHits = raycaster.intersectObjects(terrainGroundMeshes, true);
+    const terrainHit = terrainHits.find((hit) => hit.point.y >= -0.08 && hit.point.y <= 8);
+    if (terrainHit) {
+      return terrainHit.point.clone();
+    }
+  }
+
   const destination = new THREE.Vector3();
   if (!raycaster.ray.intersectPlane(groundPlane, destination)) {
     return null;
   }
 
-  destination.y = 0;
+  destination.y = getGroundHeightAt(destination.x, destination.z);
   return destination;
+}
+
+function clampEditorCameraTarget() {
+  editorCameraState.target.x = THREE.MathUtils.clamp(editorCameraState.target.x, ROOM_BOUNDS.minX - 3.5, ROOM_BOUNDS.maxX + 3.5);
+  editorCameraState.target.z = THREE.MathUtils.clamp(editorCameraState.target.z, ROOM_BOUNDS.minZOpen - 4, ROOM_BOUNDS.maxZ + 4);
+  editorCameraState.target.y = getGroundHeightAt(editorCameraState.target.x, editorCameraState.target.z);
+}
+
+function resetEditorCameraTarget(point?: GridPoint | THREE.Vector3) {
+  const source = point ?? sceneAssets?.player.position ?? dungeonMapConfig.playerSpawn;
+  editorCameraState.target.set(source.x, getGroundHeightAt(source.x, source.z), source.z);
+  editorCameraState.initialized = true;
+  clampEditorCameraTarget();
+}
+
+function ensureEditorCameraTarget() {
+  if (!editorCameraState.initialized) {
+    resetEditorCameraTarget();
+  }
+}
+
+function panEditorCameraByClientDelta(fromClientX: number, fromClientY: number, toClientX: number, toClientY: number) {
+  ensureEditorCameraTarget();
+  const fromPoint = getFlatGroundPointFromClient(fromClientX, fromClientY);
+  const toPoint = getFlatGroundPointFromClient(toClientX, toClientY);
+  if (!fromPoint || !toPoint) {
+    return;
+  }
+
+  editorCameraState.target.add(fromPoint.sub(toPoint));
+  clampEditorCameraTarget();
+  updateCamera(true);
+}
+
+function setEditorZoomScale(nextZoomScale: number, anchorClientX?: number, anchorClientY?: number) {
+  ensureEditorCameraTarget();
+  const beforeAnchor =
+    anchorClientX === undefined || anchorClientY === undefined
+      ? null
+      : getFlatGroundPointFromClient(anchorClientX, anchorClientY);
+
+  editorCameraState.zoomScale = THREE.MathUtils.clamp(nextZoomScale, EDITOR_CAMERA_ZOOM_MIN, EDITOR_CAMERA_ZOOM_MAX);
+  applyCameraProjection();
+  updateCamera(true);
+
+  const afterAnchor =
+    beforeAnchor && anchorClientX !== undefined && anchorClientY !== undefined
+      ? getFlatGroundPointFromClient(anchorClientX, anchorClientY)
+      : null;
+  if (beforeAnchor && afterAnchor) {
+    editorCameraState.target.add(beforeAnchor.sub(afterAnchor));
+    clampEditorCameraTarget();
+    updateCamera(true);
+  }
+}
+
+function zoomEditorCameraBy(deltaScale: number, anchorClientX?: number, anchorClientY?: number) {
+  setEditorZoomScale(editorCameraState.zoomScale * deltaScale, anchorClientX, anchorClientY);
+}
+
+function nudgeEditorCamera(deltaX: number, deltaZ: number) {
+  ensureEditorCameraTarget();
+  editorCameraState.target.x += deltaX;
+  editorCameraState.target.z += deltaZ;
+  clampEditorCameraTarget();
+  updateCamera(true);
+  updateEditorCursor();
+}
+
+function resetEditorCameraInteraction() {
+  editorCameraState.pointerId = null;
+  editorCameraState.button = 0;
+  editorCameraState.startGroundPoint = null;
+  editorCameraState.panning = false;
+  editorCameraState.movingSelection = false;
+  editorCameraState.selectionCandidate = null;
+  mapSelectionDragState = null;
+}
+
+function getSelectedMapItem() {
+  if (!selectedMapItem) {
+    return null;
+  }
+
+  const item =
+    selectedMapItem.kind === 'wall'
+      ? dungeonMapConfig.walls[selectedMapItem.index]
+      : selectedMapItem.kind === 'prop'
+        ? dungeonMapConfig.props[selectedMapItem.index]
+        : dungeonMapConfig.enemies[selectedMapItem.index];
+
+  if (!item) {
+    selectedMapItem = null;
+    return null;
+  }
+
+  return {
+    selection: selectedMapItem,
+    item,
+  } satisfies { selection: MapSelection; item: RotatableMapItem };
+}
+
+function getPropMapLabel(key: JourneyPropKey) {
+  if (key === 'forest-pack') {
+    return 'Forest Pack';
+  }
+
+  return key in MAP_TOOL_LABELS ? MAP_TOOL_LABELS[key as MapTool] : key;
+}
+
+function getRotatableMapItemLabel(kind: RotatableMapItemKind, item: RotatableMapItem) {
+  if (kind === 'wall') {
+    const wall = item as WallSegmentConfig;
+    if (wall.opening) {
+      return MAP_TOOL_LABELS['wall-opening'];
+    }
+    if (wall.narrow) {
+      return MAP_TOOL_LABELS['wall-narrow'];
+    }
+    if (wall.half) {
+      return MAP_TOOL_LABELS['wall-half'];
+    }
+    return MAP_TOOL_LABELS.wall;
+  }
+
+  if (kind === 'prop') {
+    return getPropMapLabel((item as PropConfig).key);
+  }
+
+  return getEnemyLabel((item as EnemyConfig).kind);
+}
+
+function getRotatableMapItemRadius(kind: RotatableMapItemKind, item: RotatableMapItem) {
+  if (kind === 'wall') {
+    return 0.78;
+  }
+
+  if (kind === 'prop') {
+    return Math.max(0.76, (item as PropConfig).radius + 0.18);
+  }
+
+  return Math.max(0.76, (item as EnemyConfig).radius ?? 0.68);
+}
+
+function setSelectedMapItem(selection: MapSelection | null) {
+  selectedMapItem = selection;
+  syncMapSelectionUi();
+}
+
+function clearSelectedMapItem() {
+  selectedMapItem = null;
+  mapSelectionDragState = null;
+  mapSelectionMarker.visible = false;
+  mapSelectionToolbarEl.hidden = true;
+}
+
+function registerEditorSelectionTarget(root: THREE.Object3D, selection: MapSelection, item: RotatableMapItem) {
+  editorSelectionTargets.push({
+    root,
+    selection,
+    editorOrder: isValidMapEditorOrder(item.editorOrder) ? item.editorOrder : 0,
+    layer: REMOVABLE_MAP_ITEM_LAYER[selection.kind],
+  });
+}
+
+function findRotatableMapItemAtPoint(point: THREE.Vector3) {
+  assignMissingMapEditorOrders(dungeonMapConfig);
+  const candidates: Array<{
+    selection: MapSelection;
+    item: RotatableMapItem;
+    distance: number;
+    editorOrder: number;
+    layer: number;
+  }> = [];
+  const addCandidate = (kind: RotatableMapItemKind, item: RotatableMapItem, index: number, threshold: number) => {
+    const distance = getPointDistance(point, item);
+    if (distance > threshold) {
+      return;
+    }
+
+    candidates.push({
+      selection: { kind, index },
+      item,
+      distance,
+      editorOrder: isValidMapEditorOrder(item.editorOrder) ? item.editorOrder : 0,
+      layer: REMOVABLE_MAP_ITEM_LAYER[kind],
+    });
+  };
+
+  for (const [index, wall] of dungeonMapConfig.walls.entries()) {
+    addCandidate('wall', wall, index, 0.86);
+  }
+
+  for (const [index, prop] of dungeonMapConfig.props.entries()) {
+    addCandidate('prop', prop, index, Math.max(0.78, prop.radius + 0.22));
+  }
+
+  for (const [index, enemy] of dungeonMapConfig.enemies.entries()) {
+    addCandidate('enemy', enemy, index, Math.max(0.78, enemy.radius ?? 0.68));
+  }
+
+  return (
+    candidates.sort((left, right) => {
+      if (right.editorOrder !== left.editorOrder) {
+        return right.editorOrder - left.editorOrder;
+      }
+      if (right.layer !== left.layer) {
+        return right.layer - left.layer;
+      }
+      return left.distance - right.distance;
+    })[0] ?? null
+  );
+}
+
+function findRotatableMapItemAtClient(clientX: number, clientY: number) {
+  const target = getEditorSelectionTargetAtClient(clientX, clientY);
+  if (!target) {
+    return null;
+  }
+
+  const item =
+    target.selection.kind === 'wall'
+      ? dungeonMapConfig.walls[target.selection.index]
+      : target.selection.kind === 'prop'
+        ? dungeonMapConfig.props[target.selection.index]
+        : dungeonMapConfig.enemies[target.selection.index];
+  if (!item) {
+    return null;
+  }
+
+  return {
+    selection: target.selection,
+    item,
+    distance: 0,
+    editorOrder: target.editorOrder,
+    layer: target.layer,
+  };
+}
+
+function selectRotatableMapItemAtPoint(point: THREE.Vector3) {
+  const candidate = findRotatableMapItemAtPoint(point);
+  if (!candidate) {
+    clearSelectedMapItem();
+    return false;
+  }
+
+  setSelectedMapItem(candidate.selection);
+  renderEditorControls();
+  const label = getRotatableMapItemLabel(candidate.selection.kind, candidate.item);
+  setOverlay(`${label}을 선택했습니다.`);
+  return true;
+}
+
+function rotateSelectedMapItem(step: number) {
+  const target = getSelectedMapItem();
+  if (!target) {
+    clearSelectedMapItem();
+    return false;
+  }
+
+  const before = cloneMapConfig(dungeonMapConfig);
+  target.item.rotationQuarter = THREE.MathUtils.euclideanModulo((target.item.rotationQuarter ?? 0) + step, 4);
+  pushMapHistory(before);
+  persistMapConfig();
+  const label = getRotatableMapItemLabel(target.selection.kind, target.item);
+  rebuildSceneFromMapEdit(`${label}을 회전했습니다.`);
+  return true;
+}
+
+function syncMapSelectionUi() {
+  const target = getSelectedMapItem();
+  if (!isMapEditorActive() || !target) {
+    mapSelectionMarker.visible = false;
+    mapSelectionToolbarEl.hidden = true;
+    return;
+  }
+
+  const item = target.item;
+  const groundHeight = getGroundHeightAt(item.x, item.z);
+  const radius = getRotatableMapItemRadius(target.selection.kind, item);
+  mapSelectionMarker.visible = true;
+  mapSelectionMarker.position.set(item.x, groundHeight + 0.08, item.z);
+  mapSelectionMarker.scale.setScalar(radius);
+
+  const anchor = new THREE.Vector3(item.x, groundHeight + 1.25 + radius * 0.8, item.z);
+  anchor.project(camera);
+  if (anchor.z < -1 || anchor.z > 1) {
+    mapSelectionToolbarEl.hidden = true;
+    return;
+  }
+
+  const x = (anchor.x * 0.5 + 0.5) * viewportState.width;
+  const y = (-anchor.y * 0.5 + 0.5) * viewportState.height;
+  const clampedX = THREE.MathUtils.clamp(x, 56, viewportState.width - 56);
+  const clampedY = THREE.MathUtils.clamp(y, 56, viewportState.height - 24);
+  mapSelectionToolbarEl.style.left = `${clampedX}px`;
+  mapSelectionToolbarEl.style.top = `${clampedY}px`;
+  mapSelectionToolbarEl.hidden = false;
+}
+
+function getSnappedPointForMapSelection(kind: RotatableMapItemKind, item: RotatableMapItem, point: THREE.Vector3) {
+  if (kind === 'wall') {
+    return snapWallPoint(point, item.rotationQuarter ?? 0);
+  }
+
+  return snapCenterPoint(point);
+}
+
+function rebuildSceneFromMapSelectionMove() {
+  resetState({ preserveLevel: true, preserveMap: true });
+  createSceneAssets();
+  updateCamera(true);
+  syncHud();
+  syncEditorSceneHelpers();
+  updateEditorCursor();
+  syncMapSelectionUi();
+}
+
+function beginMapSelectionDrag() {
+  const target = getSelectedMapItem();
+  if (!target) {
+    return false;
+  }
+
+  editorCameraState.movingSelection = true;
+  mapSelectionDragState = {
+    before: cloneMapConfig(dungeonMapConfig),
+    moved: false,
+    label: getRotatableMapItemLabel(target.selection.kind, target.item),
+  };
+  return true;
+}
+
+function moveSelectedMapItemToPoint(point: THREE.Vector3) {
+  const target = getSelectedMapItem();
+  if (!target) {
+    return false;
+  }
+
+  const snapped = getSnappedPointForMapSelection(target.selection.kind, target.item, point);
+  if (Math.abs(target.item.x - snapped.x) <= 0.001 && Math.abs(target.item.z - snapped.z) <= 0.001) {
+    syncMapSelectionUi();
+    return false;
+  }
+
+  target.item.x = snapped.x;
+  target.item.z = snapped.z;
+  if (mapSelectionDragState) {
+    mapSelectionDragState.moved = true;
+  }
+  rebuildSceneFromMapSelectionMove();
+  return true;
+}
+
+function finalizeMapSelectionDrag() {
+  if (!mapSelectionDragState) {
+    return false;
+  }
+
+  const dragState = mapSelectionDragState;
+  mapSelectionDragState = null;
+  editorCameraState.movingSelection = false;
+  if (!dragState.moved) {
+    syncMapSelectionUi();
+    return false;
+  }
+
+  pushMapHistory(dragState.before);
+  persistMapConfig();
+  renderEditorControls();
+  rebuildSceneFromMapEdit(`${dragState.label} 위치를 옮겼습니다.`);
+  return true;
 }
 
 function rebuildSceneFromMapEdit(message: string) {
@@ -5132,56 +7827,95 @@ function rebuildSceneFromMapEdit(message: string) {
   createSceneAssets();
   updateCamera();
   syncHud();
+  renderEditorLevelOptions();
   renderEditorControls();
   syncEditorSceneHelpers();
   updateEditorCursor();
+  syncMapSelectionUi();
   setOverlay(message);
 }
 
-function removeNearestMapItem(point: THREE.Vector3) {
-  let changed = false;
-  let bestDistance = Infinity;
-  let bestCandidate: { kind: 'floor' | 'wall' | 'prop' | 'coin' | 'enemy'; index: number } | null = null;
+function removeMapSelection(selection: MapSelection) {
+  const collection =
+    selection.kind === 'wall'
+      ? dungeonMapConfig.walls
+      : selection.kind === 'prop'
+        ? dungeonMapConfig.props
+        : dungeonMapConfig.enemies;
+  if (selection.index < 0 || selection.index >= collection.length) {
+    return false;
+  }
+
+  collection.splice(selection.index, 1);
+  return true;
+}
+
+function removeNearestMapItem(point: THREE.Vector3, preferredSelection: MapSelection | null = null) {
+  assignMissingMapEditorOrders(dungeonMapConfig);
+  if (preferredSelection && removeMapSelection(preferredSelection)) {
+    return true;
+  }
+
+  const candidates: Array<{
+    kind: 'floor' | 'terrain' | 'wall' | 'prop' | 'coin' | 'enemy';
+    index: number;
+    distance: number;
+    editorOrder: number;
+    layer: number;
+  }> = [];
+  const addCandidate = (
+    kind: 'floor' | 'terrain' | 'wall' | 'prop' | 'coin' | 'enemy',
+    item: OrderedMapItem,
+    index: number,
+    threshold: number,
+  ) => {
+    const distance = getPointDistance(point, item);
+    if (distance > threshold) {
+      return;
+    }
+
+    candidates.push({
+      kind,
+      index,
+      distance,
+      editorOrder: isValidMapEditorOrder(item.editorOrder) ? item.editorOrder : 0,
+      layer: REMOVABLE_MAP_ITEM_LAYER[kind],
+    });
+  };
 
   for (const [index, tile] of dungeonMapConfig.floorTiles.entries()) {
-    const distance = getPointDistance(point, tile);
-    if (distance <= 0.72 && distance < bestDistance) {
-      bestDistance = distance;
-      bestCandidate = { kind: 'floor', index };
-    }
+    addCandidate('floor', tile, index, 0.72);
+  }
+
+  for (const [index, paint] of dungeonMapConfig.terrainPaints.entries()) {
+    addCandidate('terrain', paint, index, 0.46);
   }
 
   for (const [index, wall] of dungeonMapConfig.walls.entries()) {
-    const distance = getPointDistance(point, wall);
-    if (distance <= 0.82 && distance < bestDistance) {
-      bestDistance = distance;
-      bestCandidate = { kind: 'wall', index };
-    }
+    addCandidate('wall', wall, index, 0.82);
   }
 
   for (const [index, prop] of dungeonMapConfig.props.entries()) {
-    const distance = getPointDistance(point, prop);
-    if (distance <= 0.72 && distance < bestDistance) {
-      bestDistance = distance;
-      bestCandidate = { kind: 'prop', index };
-    }
+    addCandidate('prop', prop, index, 0.72);
   }
 
   for (const [index, coin] of dungeonMapConfig.coins.entries()) {
-    const distance = getPointDistance(point, coin);
-    if (distance <= 0.72 && distance < bestDistance) {
-      bestDistance = distance;
-      bestCandidate = { kind: 'coin', index };
-    }
+    addCandidate('coin', coin, index, 0.72);
   }
 
   for (const [index, enemy] of dungeonMapConfig.enemies.entries()) {
-    const distance = getPointDistance(point, enemy);
-    if (distance <= 0.72 && distance < bestDistance) {
-      bestDistance = distance;
-      bestCandidate = { kind: 'enemy', index };
-    }
+    addCandidate('enemy', enemy, index, 0.72);
   }
+
+  const bestCandidate = candidates.sort((left, right) => {
+    if (right.editorOrder !== left.editorOrder) {
+      return right.editorOrder - left.editorOrder;
+    }
+    if (right.layer !== left.layer) {
+      return right.layer - left.layer;
+    }
+    return left.distance - right.distance;
+  })[0] ?? null;
 
   if (!bestCandidate) {
     return false;
@@ -5190,43 +7924,185 @@ function removeNearestMapItem(point: THREE.Vector3) {
   switch (bestCandidate.kind) {
     case 'floor':
       dungeonMapConfig.floorTiles.splice(bestCandidate.index, 1);
-      changed = true;
+      break;
+    case 'terrain':
+      dungeonMapConfig.terrainPaints.splice(bestCandidate.index, 1);
       break;
     case 'wall':
       dungeonMapConfig.walls.splice(bestCandidate.index, 1);
-      changed = true;
       break;
     case 'prop':
       dungeonMapConfig.props.splice(bestCandidate.index, 1);
-      changed = true;
       break;
     case 'coin':
       dungeonMapConfig.coins.splice(bestCandidate.index, 1);
-      changed = true;
       break;
     case 'enemy':
       dungeonMapConfig.enemies.splice(bestCandidate.index, 1);
-      changed = true;
       break;
     default:
       break;
   }
 
+  return true;
+}
+
+function getTerrainBrushCells(point: THREE.Vector3, kind: TerrainPaintKind) {
+  const center = snapTerrainBrushPoint(point);
+  const radius = isConnectiveTerrainKind(kind) ? TERRAIN_PATH_RADIUS : TERRAIN_BRUSH_RADIUS;
+  const cellRadius = Math.ceil(radius / TERRAIN_BRUSH_CELL_SIZE);
+  const cells: GridPoint[] = [];
+
+  for (let dx = -cellRadius; dx <= cellRadius; dx += 1) {
+    for (let dz = -cellRadius; dz <= cellRadius; dz += 1) {
+      const cell = {
+        x: THREE.MathUtils.clamp(center.x + dx * TERRAIN_BRUSH_CELL_SIZE, -10, 10),
+        z: THREE.MathUtils.clamp(center.z + dz * TERRAIN_BRUSH_CELL_SIZE, -12, 11),
+      };
+      if (Math.hypot(cell.x - center.x, cell.z - center.z) <= radius + 0.001) {
+        cells.push(cell);
+      }
+    }
+  }
+
+  return cells;
+}
+
+function findTerrainPaintIndexAt(point: GridPoint) {
+  const key = terrainPaintCellKey(point);
+  return dungeonMapConfig.terrainPaints.findIndex((paint) => terrainPaintCellKey(paint) === key);
+}
+
+function applyTerrainBrushAtPoint(point: THREE.Vector3) {
+  const kind = getTerrainPaintKindForTool(currentMapTool);
+  if (!kind) {
+    return false;
+  }
+
+  let changed = false;
+  const config = TERRAIN_PAINT_CONFIGS[kind];
+  for (const cell of getTerrainBrushCells(point, kind)) {
+    const index = findTerrainPaintIndexAt(cell);
+    if (index >= 0) {
+      const existing = dungeonMapConfig.terrainPaints[index]!;
+      if (existing.kind !== kind) {
+        dungeonMapConfig.terrainPaints[index] = {
+          ...cell,
+          kind,
+          level: 1,
+          editorOrder: allocateMapEditorOrder(),
+        };
+        changed = true;
+      } else if (config.raisesLevel) {
+        const nextLevel = normalizeTerrainPaintLevel(kind, existing.level + 1);
+        if (nextLevel !== existing.level) {
+          existing.level = nextLevel;
+          existing.editorOrder = allocateMapEditorOrder();
+          changed = true;
+        }
+      }
+      continue;
+    }
+
+    dungeonMapConfig.terrainPaints.push({
+      ...cell,
+      kind,
+      level: 1,
+      editorOrder: allocateMapEditorOrder(),
+    });
+    changed = true;
+  }
+
   return changed;
 }
 
-function applyMapToolAtPoint(point: THREE.Vector3, erase = false) {
+function applyTerrainBrushStroke(point: THREE.Vector3) {
+  if (!terrainBrushDragState) {
+    return false;
+  }
+
+  const previous = terrainBrushDragState.lastPoint;
+  let changed = false;
+  if (previous) {
+    const distance = previous.distanceTo(point);
+    const steps = Math.max(1, Math.ceil(distance / (TERRAIN_BRUSH_CELL_SIZE * 0.55)));
+    for (let index = 1; index <= steps; index += 1) {
+      const sampled = previous.clone().lerp(point, index / steps);
+      changed = applyTerrainBrushAtPoint(sampled) || changed;
+    }
+  } else {
+    changed = applyTerrainBrushAtPoint(point);
+  }
+
+  terrainBrushDragState.lastPoint = point.clone();
+  terrainBrushDragState.changed = terrainBrushDragState.changed || changed;
+  if (changed) {
+    const now = performance.now();
+    if (now - terrainBrushDragState.lastRebuildMs > 90) {
+      persistMapConfig();
+      rebuildSceneFromMapEdit(`${MAP_TOOL_LABELS[currentMapTool]} 적용 중입니다.`);
+      terrainBrushDragState.lastRebuildMs = now;
+    }
+  }
+  return changed;
+}
+
+function beginTerrainBrushDrag(point: THREE.Vector3 | null) {
+  if (!point || !isTerrainBrushTool(currentMapTool)) {
+    return false;
+  }
+
+  clearSelectedMapItem();
+  terrainBrushDragState = {
+    before: cloneMapConfig(dungeonMapConfig),
+    changed: false,
+    lastRebuildMs: 0,
+    lastPoint: null,
+  };
+  applyTerrainBrushStroke(point);
+  return true;
+}
+
+function finalizeTerrainBrushDrag() {
+  const dragState = terrainBrushDragState;
+  terrainBrushDragState = null;
+  if (!dragState?.changed) {
+    return false;
+  }
+
+  pushMapHistory(dragState.before);
+  persistMapConfig();
+  rebuildSceneFromMapEdit(`${MAP_TOOL_LABELS[currentMapTool]} 지형을 적용했습니다.`);
+  return true;
+}
+
+function applyMapToolAtPoint(point: THREE.Vector3, erase = false, preferredSelection: MapSelection | null = null) {
+  const before = cloneMapConfig(dungeonMapConfig);
+  let nextSelection: MapSelection | null = null;
   if (erase || currentMapTool === 'erase') {
-    const removed = removeNearestMapItem(point);
+    const removed = removeNearestMapItem(point, preferredSelection);
     if (!removed) {
       return;
     }
+    clearSelectedMapItem();
+    pushMapHistory(before);
     persistMapConfig();
     rebuildSceneFromMapEdit('맵 오브젝트를 삭제했습니다.');
     return;
   }
 
   const snapped = getSnappedPointForTool(point, currentMapTool, currentMapRotationQuarter);
+
+  if (isTerrainBrushTool(currentMapTool)) {
+    if (!applyTerrainBrushAtPoint(point)) {
+      return;
+    }
+    clearSelectedMapItem();
+    pushMapHistory(before);
+    persistMapConfig();
+    rebuildSceneFromMapEdit(`${MAP_TOOL_LABELS[currentMapTool]} 지형을 적용했습니다.`);
+    return;
+  }
 
   switch (currentMapTool) {
     case 'floor':
@@ -5237,6 +8113,7 @@ function applyMapToolAtPoint(point: THREE.Vector3, erase = false) {
       dungeonMapConfig.floorTiles.push({
         ...snapped,
         detail: currentMapTool === 'floor-detail',
+        editorOrder: allocateMapEditorOrder(),
       });
       break;
     }
@@ -5253,7 +8130,9 @@ function applyMapToolAtPoint(point: THREE.Vector3, erase = false) {
         half: currentMapTool === 'wall-half',
         narrow: currentMapTool === 'wall-narrow',
         opening: currentMapTool === 'wall-opening',
+        editorOrder: allocateMapEditorOrder(),
       });
+      nextSelection = { kind: 'wall', index: dungeonMapConfig.walls.length - 1 };
       break;
     }
     case 'column':
@@ -5264,7 +8143,6 @@ function applyMapToolAtPoint(point: THREE.Vector3, erase = false) {
     case 'stones':
     case 'wood-structure':
     case 'wood-support':
-    case 'forest-pack':
     case 'tree-1':
     case 'tree-2':
     case 'tree-3':
@@ -5284,6 +8162,28 @@ function applyMapToolAtPoint(point: THREE.Vector3, erase = false) {
     case 'mountain-3':
     case 'terrain-1':
     case 'terrain-2':
+    case 'arena-banner':
+    case 'arena-block':
+    case 'arena-border-corner':
+    case 'arena-border-straight':
+    case 'arena-bricks':
+    case 'arena-column':
+    case 'arena-column-damaged':
+    case 'arena-floor':
+    case 'arena-floor-detail':
+    case 'arena-soldier':
+    case 'arena-stairs':
+    case 'arena-stairs-corner':
+    case 'arena-stairs-corner-inner':
+    case 'arena-statue':
+    case 'arena-tree':
+    case 'arena-trophy':
+    case 'arena-wall':
+    case 'arena-wall-corner':
+    case 'arena-wall-gate':
+    case 'arena-weapon-rack':
+    case 'arena-weapon-spear':
+    case 'arena-weapon-sword':
     case 'trap': {
       dungeonMapConfig.props = dungeonMapConfig.props.filter(
         (prop) => Math.abs(prop.x - snapped.x) > 0.001 || Math.abs(prop.z - snapped.z) > 0.001,
@@ -5294,27 +8194,35 @@ function applyMapToolAtPoint(point: THREE.Vector3, erase = false) {
         z: snapped.z,
         radius: getPropRadius(currentMapTool),
         rotationQuarter: currentMapRotationQuarter,
+        editorOrder: allocateMapEditorOrder(),
       });
+      nextSelection = { kind: 'prop', index: dungeonMapConfig.props.length - 1 };
       break;
     }
     case 'coin': {
       dungeonMapConfig.coins = dungeonMapConfig.coins.filter(
         (coin) => Math.abs(coin.x - snapped.x) > 0.001 || Math.abs(coin.z - snapped.z) > 0.001,
       );
-      dungeonMapConfig.coins.push({ ...snapped, value: 80 });
+      dungeonMapConfig.coins.push({ ...snapped, value: 80, editorOrder: allocateMapEditorOrder() });
       break;
     }
-    case 'enemy': {
+    case 'enemy':
+    case 'enemy-zombie':
+    case 'enemy-captain':
+    case 'enemy-giant':
+    case 'enemy-skeleton':
+    case 'enemy-demon': {
       dungeonMapConfig.enemies = dungeonMapConfig.enemies.filter(
         (enemy) => Math.abs(enemy.x - snapped.x) > 0.001 || Math.abs(enemy.z - snapped.z) > 0.001,
       );
+      const kind = getEnemyKindForMapTool(currentMapTool) ?? 'guard';
       dungeonMapConfig.enemies.push({
-        ...snapped,
-        hp: 3,
-        speed: 1.3,
-        value: 155,
-        rotationQuarter: currentMapRotationQuarter,
+        ...createEnemy(kind, snapped.x, snapped.z, {
+          rotationQuarter: currentMapRotationQuarter,
+          editorOrder: allocateMapEditorOrder(),
+        }),
       });
+      nextSelection = { kind: 'enemy', index: dungeonMapConfig.enemies.length - 1 };
       break;
     }
     case 'player-spawn':
@@ -5330,11 +8238,74 @@ function applyMapToolAtPoint(point: THREE.Vector3, erase = false) {
       dungeonMapConfig.exit = snapped;
       break;
     default:
+      if (isForestPackItemKey(currentMapTool)) {
+        dungeonMapConfig.props = dungeonMapConfig.props.filter(
+          (prop) => Math.abs(prop.x - snapped.x) > 0.001 || Math.abs(prop.z - snapped.z) > 0.001,
+        );
+        dungeonMapConfig.props.push({
+          key: currentMapTool,
+          x: snapped.x,
+          z: snapped.z,
+          radius: getPropRadius(currentMapTool),
+          rotationQuarter: currentMapRotationQuarter,
+          editorOrder: allocateMapEditorOrder(),
+        });
+        nextSelection = { kind: 'prop', index: dungeonMapConfig.props.length - 1 };
+      }
       break;
   }
 
+  setSelectedMapItem(nextSelection);
+  pushMapHistory(before);
   persistMapConfig();
   rebuildSceneFromMapEdit(`${MAP_TOOL_LABELS[currentMapTool]} 배치를 반영했습니다.`);
+}
+
+const LEGACY_FOREST_PACK_LAYOUT: Array<{ key: ForestPackItemKey; dx: number; dz: number; rotationQuarter?: number }> = [
+  { key: 'forest-tree-1', dx: -3.4, dz: -1.6, rotationQuarter: 0 },
+  { key: 'forest-tree-2', dx: 3.0, dz: -1.5, rotationQuarter: 1 },
+  { key: 'forest-tree-4', dx: -0.9, dz: 2.8, rotationQuarter: 2 },
+  { key: 'forest-plant-2', dx: -4.0, dz: 2.6, rotationQuarter: 0 },
+  { key: 'forest-plant-4', dx: 3.8, dz: 2.4, rotationQuarter: 2 },
+  { key: 'forest-grass-1', dx: -1.0, dz: -3.3, rotationQuarter: 1 },
+  { key: 'forest-rock-4', dx: 1.2, dz: 4.0, rotationQuarter: 0 },
+  { key: 'forest-dead-1', dx: 4.3, dz: -3.5, rotationQuarter: 3 },
+];
+
+function rotateLegacyForestPackOffset(dx: number, dz: number, rotationQuarter = 0) {
+  switch (THREE.MathUtils.euclideanModulo(rotationQuarter, 4)) {
+    case 1:
+      return { x: dz, z: -dx };
+    case 2:
+      return { x: -dx, z: -dz };
+    case 3:
+      return { x: -dz, z: dx };
+    default:
+      return { x: dx, z: dz };
+  }
+}
+
+function expandLegacyForestPackProp(prop: PropConfig, sourcePropIndex: number): RenderableMapPropConfig[] {
+  if (prop.key !== 'forest-pack') {
+    return [{ ...(prop as RenderablePropConfig), sourcePropIndex }];
+  }
+
+  return LEGACY_FOREST_PACK_LAYOUT.map((item, index) => {
+    const offset = rotateLegacyForestPackOffset(item.dx, item.dz, prop.rotationQuarter);
+    return {
+      key: item.key,
+      x: prop.x + offset.x,
+      z: prop.z + offset.z,
+      radius: getPropRadius(item.key),
+      rotationQuarter: THREE.MathUtils.euclideanModulo((prop.rotationQuarter ?? 0) + (item.rotationQuarter ?? 0), 4),
+      editorOrder: prop.editorOrder ? prop.editorOrder + index * 0.001 : undefined,
+      sourcePropIndex,
+    } satisfies RenderableMapPropConfig;
+  });
+}
+
+function getRenderableMapProps(): RenderableMapPropConfig[] {
+  return dungeonMapConfig.props.flatMap((prop, index) => expandLegacyForestPackProp(prop, index));
 }
 
 function buildEnvironment() {
@@ -5342,16 +8313,35 @@ function buildEnvironment() {
   const world = new THREE.Group();
   obstacles.length = 0;
   wallObstacles.length = 0;
+  terrainGroundMeshes.length = 0;
+  terrainSurfaceAreas.length = 0;
   coins.length = 0;
   enemies.length = 0;
+  editorSelectionTargets.length = 0;
   const isDuelMode = gameMode === 'duel';
+  const renderProps = getRenderableMapProps();
 
   for (const tile of dungeonMapConfig.floorTiles) {
     addFloorTile(world, tile.x, tile.z, tile.detail);
   }
 
-  for (const wall of dungeonMapConfig.walls) {
-    addWallSegment(
+  const terrainPaintByKey = new Map(dungeonMapConfig.terrainPaints.map((paint) => [terrainPaintCellKey(paint), paint]));
+  for (const paint of dungeonMapConfig.terrainPaints) {
+    addTerrainPaintMesh(world, paint);
+  }
+  for (const paint of dungeonMapConfig.terrainPaints) {
+    const east = terrainPaintByKey.get(terrainPaintCellKey({ x: paint.x + TERRAIN_BRUSH_CELL_SIZE, z: paint.z }));
+    const south = terrainPaintByKey.get(terrainPaintCellKey({ x: paint.x, z: paint.z + TERRAIN_BRUSH_CELL_SIZE }));
+    if (east) {
+      addTerrainPaintLink(world, paint, east);
+    }
+    if (south) {
+      addTerrainPaintLink(world, paint, south);
+    }
+  }
+
+  for (const [index, wall] of dungeonMapConfig.walls.entries()) {
+    const wallMesh = addWallSegment(
       world,
       wall.x,
       wall.z,
@@ -5360,32 +8350,54 @@ function buildEnvironment() {
       wall.opening,
       wall.narrow,
     );
+    registerEditorSelectionTarget(wallMesh, { kind: 'wall', index }, wall);
   }
 
-  const gate = cloneTemplate('gate');
-  gate.position.copy(getMapPointVector(dungeonMapConfig.gate));
+  for (const prop of renderProps) {
+    if (!isTerrainGroundKey(prop.key)) {
+      continue;
+    }
+
+    const mesh = cloneTemplate(prop.key);
+    mesh.position.copy(getMapPointVector(prop));
+    mesh.rotation.y = rotationQuarterToRadians(prop.rotationQuarter);
+    world.add(mesh);
+    registerEditorSelectionTarget(mesh, { kind: 'prop', index: prop.sourcePropIndex }, dungeonMapConfig.props[prop.sourcePropIndex]!);
+    addTerrainGroundSurface(mesh, prop);
+  }
+
+  world.updateMatrixWorld(true);
+
+  const gate = cloneTemplate(getGateTemplateKey());
+  gate.position.copy(getGroundedMapPointVector(dungeonMapConfig.gate));
   gate.rotation.y = 0;
   gate.visible = !isDuelMode;
   world.add(gate);
 
-  const stairs = cloneTemplate('stairs');
-  stairs.position.copy(getMapPointVector(dungeonMapConfig.exit));
+  const stairs = cloneTemplate(getExitStairsTemplateKey());
+  stairs.position.copy(getGroundedMapPointVector(dungeonMapConfig.exit));
   stairs.rotation.y = Math.PI;
   stairs.visible = !isDuelMode;
   world.add(stairs);
 
   const chest = cloneTemplate('chest');
-  chest.position.copy(getMapPointVector(dungeonMapConfig.chest));
+  chest.position.copy(getGroundedMapPointVector(dungeonMapConfig.chest));
   chest.visible = !isDuelMode;
   world.add(chest);
 
-  for (const prop of dungeonMapConfig.props) {
+  for (const prop of renderProps) {
+    if (isTerrainGroundKey(prop.key)) {
+      continue;
+    }
+
     const mesh = cloneTemplate(prop.key);
-    mesh.position.copy(getMapPointVector(prop));
+    mesh.position.copy(getGroundedMapPointVector(prop));
     mesh.rotation.y = rotationQuarterToRadians(prop.rotationQuarter);
     world.add(mesh);
-    if (prop.radius > 0) {
-      addCircularObstacle(prop.x, prop.z, prop.radius);
+    registerEditorSelectionTarget(mesh, { kind: 'prop', index: prop.sourcePropIndex }, dungeonMapConfig.props[prop.sourcePropIndex]!);
+    const runtimeRadius = isForestPackItemKey(prop.key) ? getPropRadius(prop.key) : prop.radius;
+    if (runtimeRadius > 0) {
+      addCircularObstacle(prop.x, prop.z, runtimeRadius);
     }
   }
 
@@ -5400,7 +8412,7 @@ function buildEnvironment() {
   if (!isDuelMode) {
     dungeonMapConfig.coins.forEach((spot, index) => {
       const coin = cloneTemplate('coin');
-      coin.position.copy(getMapPointVector(spot, 0.28));
+      coin.position.copy(getGroundedMapPointVector(spot, 0.28));
       world.add(coin);
       coins.push({
         mesh: coin,
@@ -5412,22 +8424,27 @@ function buildEnvironment() {
     });
 
     dungeonMapConfig.enemies.forEach((spot, index) => {
-      const mesh = cloneTemplate('character-orc', true);
+      const enemyModelKey = getEnemyModelKeyForKind(spot.kind);
+      const usesEmbeddedEnemyModel = enemyModelKey !== null;
+      const characterTemplateKey: TemplateKey = enemyModelKey ?? 'character-orc';
+      const mesh = cloneTemplate(characterTemplateKey, true);
       const weaponKey = spot.weapon ?? (spot.kind === 'spearman' || spot.kind === 'warden' ? 'spear' : 'sword');
       const shieldKey = spot.shield ?? (spot.kind === 'brute' ? 'round' : spot.kind === 'warden' ? 'rectangle' : undefined);
       const weapon = cloneTemplate(weaponKey === 'spear' ? 'weapon-spear' : 'weapon-sword');
       const shield = shieldKey ? cloneTemplate(shieldKey === 'rectangle' ? 'shield-rectangle' : 'shield-round') : null;
-      const animations = getTemplateAnimations('character-orc');
-      mesh.position.copy(getMapPointVector(spot));
+      const animations = getTemplateAnimations(characterTemplateKey);
+      weapon.visible = !usesEmbeddedEnemyModel;
+      mesh.position.copy(getGroundedMapPointVector(spot));
       mesh.rotation.y = rotationQuarterToRadians(spot.rotationQuarter ?? (index % 2 === 0 ? 1 : 3));
       mesh.scale.setScalar(spot.scale ?? 1);
       const weaponMount = attachWeaponToRightArm(mesh, weapon);
       tuneEnemyWeapon(weapon, weaponKey);
-      if (shield && shieldKey) {
+      if (shield && shieldKey && !usesEmbeddedEnemyModel) {
         attachShieldToLeftArm(mesh, shield, shieldKey);
       }
-      const rig = createCharacterRig(mesh, weaponMount, weapon, animations);
+      const rig = createCharacterRig(mesh, weaponMount, weapon, animations, { variant: spot.kind === 'zombie' ? 'zombie' : undefined });
       world.add(mesh);
+      registerEditorSelectionTarget(mesh, { kind: 'enemy', index }, spot);
       enemies.push({
         mesh,
         weapon,
@@ -5445,7 +8462,7 @@ function buildEnvironment() {
         attackIntervalMs: spot.attackIntervalMs ?? 1200,
         attackCooldownMs: 400,
         hurtMs: 0,
-        home: getMapPointVector(spot),
+        home: getGroundedMapPointVector(spot),
         alive: true,
         value: spot.value,
       });
@@ -5455,8 +8472,9 @@ function buildEnvironment() {
   const player = cloneTemplate('character-human', true);
   const playerWeapon = cloneTemplate('weapon-sword');
   const playerAnimations = getTemplateAnimations('character-human');
-  player.position.copy(isDuelMode ? getDuelSpawnPosition(p2pState.role).position : getMapPointVector(dungeonMapConfig.playerSpawn));
+  player.position.copy(isDuelMode ? getDuelSpawnPosition(p2pState.role).position : getGroundedMapPointVector(dungeonMapConfig.playerSpawn));
   applyObstacleCollisions(player.position, PLAYER_RADIUS);
+  player.position.y = getGroundHeightAt(player.position.x, player.position.z);
   if (isDuelMode) {
     player.rotation.y = getDuelSpawnPosition(p2pState.role).rotationY;
   }
@@ -5491,6 +8509,9 @@ function buildEnvironment() {
 
 function destroyWorld() {
   if (!sceneAssets) {
+    terrainGroundMeshes.length = 0;
+    terrainSurfaceAreas.length = 0;
+    editorSelectionTargets.length = 0;
     clearEffects();
     clearMagicProjectiles();
     remotePeerAvatar = null;
@@ -5499,6 +8520,9 @@ function destroyWorld() {
 
   scene.remove(sceneAssets.world);
   sceneAssets = null;
+  terrainGroundMeshes.length = 0;
+  terrainSurfaceAreas.length = 0;
+  editorSelectionTargets.length = 0;
   remotePeerAvatar = null;
   clearEffects();
   clearMagicProjectiles();
@@ -5515,7 +8539,7 @@ function clearEffects() {
 }
 
 function resetState(options: { preserveLevel?: boolean; preserveMap?: boolean } = {}) {
-  const nextLevelIndex = options.preserveLevel ? state.levelIndex : 0;
+  const nextLevelIndex = options.preserveLevel ? state.levelIndex : startsInEditorMode ? currentEditedLevelIndex : 0;
   state.running = false;
   state.started = false;
   state.finished = false;
@@ -5567,6 +8591,7 @@ function ensureRemotePeerAvatar() {
   const spawn = getRemoteSpawnPosition(p2pState.role);
   mesh.position.copy(spawn.position);
   applyObstacleCollisions(mesh.position, PLAYER_RADIUS);
+  mesh.position.y = getGroundHeightAt(mesh.position.x, mesh.position.z);
   mesh.rotation.y = spawn.rotationY;
   const weaponMount = attachWeaponToRightArm(mesh, weapon);
   const rig = createCharacterRig(mesh, weaponMount, weapon, animations);
@@ -5621,6 +8646,7 @@ function startDuelMode() {
   sceneAssets?.player.position.copy(getDuelSpawnPosition(p2pState.role).position);
   if (sceneAssets) {
     applyObstacleCollisions(sceneAssets.player.position, PLAYER_RADIUS);
+    sceneAssets.player.position.y = getGroundHeightAt(sceneAssets.player.position.x, sceneAssets.player.position.z);
   }
   if (sceneAssets) {
     sceneAssets.player.rotation.y = getDuelSpawnPosition(p2pState.role).rotationY;
@@ -5908,18 +8934,18 @@ function openChest() {
     return false;
   }
 
-  if (sceneAssets.player.position.distanceTo(getMapPointVector(dungeonMapConfig.chest)) > 1.22) {
+  if (sceneAssets.player.position.distanceTo(getGroundedMapPointVector(dungeonMapConfig.chest)) > 1.22) {
     return false;
   }
 
   state.chestOpen = true;
   state.gateOpen = true;
-  sceneAssets.gate.position.y = 1.05;
+  sceneAssets.gate.position.y = getGroundHeightAt(dungeonMapConfig.gate.x, dungeonMapConfig.gate.z) + 1.05;
   sceneAssets.chest.rotation.y += Math.PI * 0.24;
-  sceneAssets.chest.position.y = 0.12;
+  sceneAssets.chest.position.y = getGroundHeightAt(dungeonMapConfig.chest.x, dungeonMapConfig.chest.z) + 0.12;
   addScore(isFinalLevel() ? 620 : 420);
   playCue('chest');
-  spawnEffect(getMapPointVector(dungeonMapConfig.chest), '#ffe27a');
+  spawnEffect(getGroundedMapPointVector(dungeonMapConfig.chest), '#ffe27a');
   setOverlay(isFinalLevel() ? t('finalChestOpened') : t('chestOpened'));
   return true;
 }
@@ -6026,7 +9052,7 @@ function revivePlayer() {
   state.magicCooldownMs = 0;
   state.playerHurtMs = 0;
   state.rollCooldownMs = 0;
-  sceneAssets.player.position.copy(getMapPointVector(dungeonMapConfig.playerSpawn));
+  sceneAssets.player.position.copy(getGroundedMapPointVector(dungeonMapConfig.playerSpawn));
   sceneAssets.playerRig.attackMs = 0;
   sceneAssets.playerRig.castMs = 0;
   sceneAssets.playerRig.hurtMs = 0;
@@ -6064,7 +9090,7 @@ function attemptEnemyAttack(preferredEnemy?: EnemyUnit | null) {
   sceneAssets.playerRig.attackMs = sceneAssets.playerRig.attackDurationMs;
   playCue('attack');
   const attackOrigin = sceneAssets.player.position.clone();
-  attackOrigin.y = 0.08;
+  attackOrigin.y += 0.08;
   spawnEffect(attackOrigin, '#8fd7ff');
 
   if (!enemy) {
@@ -6331,7 +9357,7 @@ function castLeftHandMagic() {
 }
 
 function runtimeMagicFlash(position: THREE.Vector3) {
-  spawnEffect(position.clone().add(new THREE.Vector3(0, 0.22, 0)), '#7ae2ff');
+  spawnMagicBurst(position.clone().add(new THREE.Vector3(0, 0.72, 0)), 0.72);
 }
 
 function attemptAction() {
@@ -6387,6 +9413,7 @@ function moveCharacterWithCollision(
     applyObstacleCollisions(next, radius);
   }
 
+  next.y = getGroundHeightAt(next.x, next.z);
   return next;
 }
 
@@ -6504,7 +9531,7 @@ function updatePlayer(deltaMs: number) {
 
   const movedDistance = previousPosition.distanceTo(sceneAssets.player.position);
   sceneAssets.playerRig.moveSpeed = movedDistance > 0 ? movedDistance / Math.max(deltaSeconds, 0.0001) : 0;
-  sceneAssets.player.position.y = 0;
+  sceneAssets.player.position.y = getGroundHeightAt(sceneAssets.player.position.x, sceneAssets.player.position.z);
 }
 
 function updateEnemies(deltaMs: number) {
@@ -6547,7 +9574,7 @@ function updateEnemies(deltaMs: number) {
       enemy.rig.moveSpeed = 0;
     }
 
-    enemy.mesh.position.y = 0;
+    enemy.mesh.position.y = getGroundHeightAt(enemy.mesh.position.x, enemy.mesh.position.z);
 
     if (planarDistance <= enemy.attackRange && enemy.attackCooldownMs <= 0) {
       enemy.attackCooldownMs = enemy.attackIntervalMs;
@@ -6666,12 +9693,22 @@ function updateMagic(deltaMs: number) {
   const deltaSeconds = deltaMs / 1000;
   for (let index = magicProjectiles.length - 1; index >= 0; index -= 1) {
     const projectile = magicProjectiles[index];
+    const previousPosition = projectile.previousPosition.clone();
     projectile.remainingMs -= deltaMs;
     projectile.mesh.position.addScaledVector(projectile.velocity, deltaSeconds);
     projectile.mesh.rotation.y += deltaSeconds * 6;
     projectile.mesh.position.y += Math.sin((state.elapsedMs + index * 90) * 0.02) * 0.002;
+    projectile.trailAccumulatorMs += deltaMs;
+
+    if (projectile.trailAccumulatorMs >= 12) {
+      spawnMagicTrailBetween(previousPosition, projectile.mesh.position, projectile.owner);
+      projectile.trailAccumulatorMs = 0;
+    }
+
+    projectile.previousPosition.copy(projectile.mesh.position);
 
     let consumed = projectile.remainingMs <= 0;
+    let impactEffectSpawned = false;
 
     if (!consumed) {
       const position = projectile.mesh.position;
@@ -6695,7 +9732,8 @@ function updateMagic(deltaMs: number) {
             remotePeerAvatar.health = Math.max(0, remotePeerAvatar.health - projectile.damage);
             remotePeerAvatar.rig.hurtMs = 260;
             playCue('magic-hit');
-            spawnEffect(projectile.mesh.position.clone(), '#7ae2ff');
+            spawnMagicBurst(projectile.mesh.position.clone(), 1.05);
+            impactEffectSpawned = true;
             void sendP2pMessage({
               type: 'DAMAGE',
               payload: {
@@ -6712,7 +9750,8 @@ function updateMagic(deltaMs: number) {
           const distance = sceneAssets.player.position.distanceTo(projectile.mesh.position);
           if (distance <= projectile.radius + PLAYER_RADIUS + 0.14) {
             consumed = true;
-            spawnEffect(projectile.mesh.position.clone(), '#7ae2ff');
+            spawnMagicBurst(projectile.mesh.position.clone(), 1.05);
+            impactEffectSpawned = true;
           }
         }
       } else {
@@ -6730,7 +9769,8 @@ function updateMagic(deltaMs: number) {
           enemy.hp -= projectile.damage;
           enemy.hurtMs = 260;
           playCue(enemy.hp <= 0 ? 'enemy-defeat' : 'magic-hit');
-          spawnEffect(projectile.mesh.position.clone(), '#7ae2ff');
+          spawnMagicBurst(projectile.mesh.position.clone(), 1.05);
+          impactEffectSpawned = true;
 
           if (enemy.hp <= 0) {
             enemy.alive = false;
@@ -6759,6 +9799,9 @@ function updateMagic(deltaMs: number) {
       continue;
     }
 
+    if (!impactEffectSpawned) {
+      spawnMagicBurst(projectile.mesh.position.clone(), 0.68);
+    }
     scene.remove(projectile.mesh);
     projectile.mesh.geometry.dispose();
     if (projectile.mesh.material instanceof THREE.Material) {
@@ -6768,7 +9811,54 @@ function updateMagic(deltaMs: number) {
   }
 }
 
+function updateMagicParticles(deltaMs: number) {
+  const frameStep = THREE.MathUtils.clamp(deltaMs / (1000 / 60), 0.25, 2.5);
+  const deltaSeconds = deltaMs / 1000;
+
+  for (let index = magicParticles.length - 1; index >= 0; index -= 1) {
+    const particle = magicParticles[index];
+    particle.remainingMs -= deltaMs;
+
+    if (particle.remainingMs <= 0) {
+      magicParticles.splice(index, 1);
+      continue;
+    }
+
+    particle.velocity.multiplyScalar(Math.pow(particle.drag, frameStep));
+    particle.position.addScaledVector(particle.velocity, deltaSeconds);
+  }
+
+  magicParticleMaterial.uniforms.uTime.value = clock.elapsedTime;
+  magicParticleMesh.count = Math.min(magicParticles.length, MAGIC_PARTICLE_MAX);
+
+  for (let index = 0; index < magicParticleMesh.count; index += 1) {
+    const particle = magicParticles[index];
+    const remainingRatio = THREE.MathUtils.clamp(particle.remainingMs / particle.maxLifeMs, 0, 1);
+    const ageRatio = 1 - remainingRatio;
+    const fade = Math.sin(remainingRatio * Math.PI * 0.5);
+    const radius = particle.radius * (1 + ageRatio * 0.72);
+
+    magicParticleScale.set(radius, radius, radius);
+    magicParticleMatrix.compose(particle.position, camera.quaternion, magicParticleScale);
+    magicParticleMesh.setMatrixAt(index, magicParticleMatrix);
+
+    const paramOffset = index * 2;
+    const tintOffset = index * 3;
+    magicParticleParamData[paramOffset] = particle.intensity * fade;
+    magicParticleParamData[paramOffset + 1] = particle.core;
+    magicParticleTintData[tintOffset] = particle.color.r;
+    magicParticleTintData[tintOffset + 1] = particle.color.g;
+    magicParticleTintData[tintOffset + 2] = particle.color.b;
+  }
+
+  magicParticleMesh.instanceMatrix.needsUpdate = true;
+  magicParticleParamAttribute.needsUpdate = true;
+  magicParticleTintAttribute.needsUpdate = true;
+}
+
 function updateEffects(deltaMs: number) {
+  updateMagicParticles(deltaMs);
+
   for (let index = effects.length - 1; index >= 0; index -= 1) {
     const effect = effects[index];
     effect.remainingMs -= deltaMs;
@@ -6800,9 +9890,9 @@ function updateChestAndGate(deltaMs: number) {
   }
 
   sceneAssets.chest.rotation.y += deltaMs * 0.00018;
-  sceneAssets.exitStairs.position.y = Math.sin(state.elapsedMs * 0.0016) * 0.04;
+  sceneAssets.exitStairs.position.y = getGroundHeightAt(dungeonMapConfig.exit.x, dungeonMapConfig.exit.z) + Math.sin(state.elapsedMs * 0.0016) * 0.04;
 
-  if (state.chestOpen && sceneAssets.player.position.distanceTo(getMapPointVector(dungeonMapConfig.exit)) <= 0.9) {
+  if (state.chestOpen && sceneAssets.player.position.distanceTo(getGroundedMapPointVector(dungeonMapConfig.exit)) <= 0.9) {
     if (advanceToNextLevel()) {
       return;
     }
@@ -6811,18 +9901,27 @@ function updateChestAndGate(deltaMs: number) {
   }
 }
 
-function updateCamera() {
+function updateCamera(snap = false) {
   if (!sceneAssets) {
     return;
   }
 
-  const target = sceneAssets.player.position.clone().add(viewportState.cameraLookOffset);
+  const targetSource = isMapEditorActive() ? editorCameraState.target : sceneAssets.player.position;
+  const target = targetSource.clone().add(viewportState.cameraLookOffset);
   const desired = target.clone().add(viewportState.cameraOffset);
-  camera.position.lerp(desired, 0.08);
+  if (snap) {
+    camera.position.copy(desired);
+  } else {
+    camera.position.lerp(desired, isMapEditorActive() ? 0.22 : 0.08);
+  }
   camera.lookAt(target);
 }
 
 function renderScene() {
+  syncMapSelectionUi();
+  if (terrainWaterMaterial) {
+    terrainWaterMaterial.uniforms.uTime.value = clock.elapsedTime;
+  }
   renderer.render(scene, camera);
 }
 
@@ -6874,6 +9973,50 @@ function gameLoop() {
   requestAnimationFrame(gameLoop);
 }
 
+function beginEditorMapPointer(event: PointerEvent, groundPoint: THREE.Vector3 | null) {
+  if (event.button === 0 && beginTerrainBrushDrag(groundPoint)) {
+    editorCameraState.pointerId = event.pointerId;
+    editorCameraState.button = event.button;
+    editorCameraState.startClientX = event.clientX;
+    editorCameraState.startClientY = event.clientY;
+    editorCameraState.lastClientX = event.clientX;
+    editorCameraState.lastClientY = event.clientY;
+    editorCameraState.startGroundPoint = groundPoint?.clone() ?? null;
+    editorCameraState.panning = false;
+    editorCameraState.movingSelection = false;
+    editorCameraState.selectionCandidate = null;
+    try {
+      canvas.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture can fail for synthetic events; window-level handlers still finish the interaction.
+    }
+    return;
+  }
+
+  const selectionCandidate =
+    event.button !== 1 && groundPoint
+      ? (findRotatableMapItemAtClient(event.clientX, event.clientY) ?? findRotatableMapItemAtPoint(groundPoint))
+      : null;
+  editorCameraState.pointerId = event.pointerId;
+  editorCameraState.button = event.button;
+  editorCameraState.startClientX = event.clientX;
+  editorCameraState.startClientY = event.clientY;
+  editorCameraState.lastClientX = event.clientX;
+  editorCameraState.lastClientY = event.clientY;
+  editorCameraState.startGroundPoint = groundPoint?.clone() ?? null;
+  editorCameraState.panning = event.button === 1;
+  editorCameraState.movingSelection = false;
+  editorCameraState.selectionCandidate = selectionCandidate?.selection ?? null;
+  if (selectionCandidate && event.button === 0 && currentMapTool !== 'erase') {
+    setSelectedMapItem(selectionCandidate.selection);
+  }
+  try {
+    canvas.setPointerCapture(event.pointerId);
+  } catch {
+    // Pointer capture can fail for synthetic events; window-level handlers still finish the interaction.
+  }
+}
+
 function onPointerDown(event: PointerEvent) {
   void unlockAudio();
 
@@ -6900,10 +10043,8 @@ function onPointerDown(event: PointerEvent) {
   if (isMapEditorActive()) {
     const groundPoint = getGroundPointFromClient(event.clientX, event.clientY);
     syncMapHoverFromWorldPoint(groundPoint);
-    if (groundPoint) {
-      event.preventDefault();
-      applyMapToolAtPoint(groundPoint, event.button === 2);
-    }
+    event.preventDefault();
+    beginEditorMapPointer(event, groundPoint);
     return;
   }
 
@@ -6951,6 +10092,68 @@ function onPointerDown(event: PointerEvent) {
 }
 
 function onPointerMove(event: PointerEvent) {
+  if (isMapEditorActive() && editorCameraState.pointerId === event.pointerId) {
+    if (event.pointerType === 'mouse' && event.buttons === 0) {
+      if (terrainBrushDragState) {
+        finalizeTerrainBrushDrag();
+      }
+      resetEditorCameraInteraction();
+      return;
+    }
+
+    if (terrainBrushDragState) {
+      event.preventDefault();
+      const movePoint = getGroundPointFromClient(event.clientX, event.clientY);
+      if (movePoint) {
+        applyTerrainBrushStroke(movePoint);
+        syncMapHoverFromWorldPoint(movePoint);
+      }
+      editorCameraState.lastClientX = event.clientX;
+      editorCameraState.lastClientY = event.clientY;
+      return;
+    }
+
+    const movedDistance = Math.hypot(event.clientX - editorCameraState.startClientX, event.clientY - editorCameraState.startClientY);
+    if (!editorCameraState.panning && !editorCameraState.movingSelection && movedDistance >= EDITOR_CAMERA_PAN_THRESHOLD_PX) {
+      if (editorCameraState.selectionCandidate && beginMapSelectionDrag()) {
+        event.preventDefault();
+        const movePoint = getGroundPointFromClient(event.clientX, event.clientY);
+        if (movePoint) {
+          moveSelectedMapItemToPoint(movePoint);
+          syncMapHoverFromWorldPoint(movePoint);
+        }
+        return;
+      }
+      editorCameraState.panning = true;
+    }
+
+    if (editorCameraState.movingSelection) {
+      event.preventDefault();
+      const movePoint = getGroundPointFromClient(event.clientX, event.clientY);
+      if (movePoint) {
+        moveSelectedMapItemToPoint(movePoint);
+        syncMapHoverFromWorldPoint(movePoint);
+      }
+      editorCameraState.lastClientX = event.clientX;
+      editorCameraState.lastClientY = event.clientY;
+      return;
+    }
+
+    if (editorCameraState.panning) {
+      event.preventDefault();
+      panEditorCameraByClientDelta(
+        editorCameraState.lastClientX,
+        editorCameraState.lastClientY,
+        event.clientX,
+        event.clientY,
+      );
+      editorCameraState.lastClientX = event.clientX;
+      editorCameraState.lastClientY = event.clientY;
+      syncMapHoverFromWorldPoint(getGroundPointFromClient(event.clientX, event.clientY));
+      return;
+    }
+  }
+
   if (
     !isMapEditorActive() ||
     isEditorTarget(event.target) ||
@@ -6962,6 +10165,123 @@ function onPointerMove(event: PointerEvent) {
   }
 
   syncMapHoverFromWorldPoint(getGroundPointFromClient(event.clientX, event.clientY));
+}
+
+function onPointerUp(event: PointerEvent) {
+  if (!isMapEditorActive() || editorCameraState.pointerId !== event.pointerId) {
+    return;
+  }
+
+  event.preventDefault();
+  try {
+    canvas.releasePointerCapture(event.pointerId);
+  } catch {
+    // The pointer may not be captured if the browser cancelled the interaction.
+  }
+
+  if (editorCameraState.movingSelection) {
+    finalizeMapSelectionDrag();
+    resetEditorCameraInteraction();
+    return;
+  }
+
+  if (terrainBrushDragState) {
+    finalizeTerrainBrushDrag();
+    resetEditorCameraInteraction();
+    return;
+  }
+
+  if (!editorCameraState.panning && editorCameraState.startGroundPoint) {
+    const shouldErase = editorCameraState.button === 2;
+    if (!shouldErase && currentMapTool !== 'erase' && editorCameraState.selectionCandidate) {
+      setSelectedMapItem(editorCameraState.selectionCandidate);
+      renderEditorControls();
+      const target = getSelectedMapItem();
+      if (target) {
+        setOverlay(`${getRotatableMapItemLabel(target.selection.kind, target.item)}을 선택했습니다.`);
+      }
+      resetEditorCameraInteraction();
+      return;
+    }
+    if (!shouldErase && currentMapTool !== 'erase' && selectRotatableMapItemAtPoint(editorCameraState.startGroundPoint)) {
+      resetEditorCameraInteraction();
+      return;
+    }
+    applyMapToolAtPoint(editorCameraState.startGroundPoint, shouldErase, editorCameraState.selectionCandidate);
+  }
+
+  resetEditorCameraInteraction();
+}
+
+function onPointerCancel(event: PointerEvent) {
+  if (editorCameraState.pointerId !== event.pointerId) {
+    return;
+  }
+
+  if (editorCameraState.movingSelection) {
+    finalizeMapSelectionDrag();
+  }
+  if (terrainBrushDragState) {
+    finalizeTerrainBrushDrag();
+  }
+  resetEditorCameraInteraction();
+}
+
+function onWheel(event: WheelEvent) {
+  if (
+    !isMapEditorActive() ||
+    isEditorTarget(event.target) ||
+    isP2pTarget(event.target) ||
+    isVirtualControlTarget(event.target) ||
+    isMenuTarget(event.target)
+  ) {
+    return;
+  }
+
+  event.preventDefault();
+  const deltaScale = Math.exp(THREE.MathUtils.clamp(event.deltaY, -240, 240) * 0.001);
+  zoomEditorCameraBy(deltaScale, event.clientX, event.clientY);
+  syncMapHoverFromWorldPoint(getGroundPointFromClient(event.clientX, event.clientY));
+}
+
+function getDraggedMapTool(event: DragEvent) {
+  const raw = event.dataTransfer?.getData(MAP_TOOL_DRAG_TYPE) ?? '';
+  return isMapTool(raw) ? raw : null;
+}
+
+function isPaletteDrag(event: DragEvent) {
+  return Array.from(event.dataTransfer?.types ?? []).includes(MAP_TOOL_DRAG_TYPE);
+}
+
+function onCanvasDragOver(event: DragEvent) {
+  if (!isMapEditorActive() || !isPaletteDrag(event)) {
+    return;
+  }
+
+  event.preventDefault();
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'copy';
+  }
+  syncMapHoverFromWorldPoint(getGroundPointFromClient(event.clientX, event.clientY));
+}
+
+function onCanvasDrop(event: DragEvent) {
+  if (!isMapEditorActive()) {
+    return;
+  }
+
+  const tool = getDraggedMapTool(event);
+  if (!tool) {
+    return;
+  }
+
+  event.preventDefault();
+  selectMapTool(tool);
+  const groundPoint = getGroundPointFromClient(event.clientX, event.clientY);
+  syncMapHoverFromWorldPoint(groundPoint);
+  if (groundPoint) {
+    applyMapToolAtPoint(groundPoint);
+  }
 }
 
 function onTouchMove(event: TouchEvent) {
@@ -7016,6 +10336,9 @@ function onKeyDown(event: KeyboardEvent) {
   if (event.code === 'KeyE' && event.shiftKey) {
     event.preventDefault();
     editorVisible = !editorVisible;
+    if (!editorVisible) {
+      clearSelectedMapItem();
+    }
     syncEditorVisibility();
     return;
   }
@@ -7025,6 +10348,7 @@ function onKeyDown(event: KeyboardEvent) {
     editorVisible = true;
     currentEditorMode = 'map';
     currentHoverPoint = null;
+    clearSelectedMapItem();
     editorModeEl.value = currentEditorMode;
     renderEditorPresetOptions();
     renderEditorControls();
@@ -7033,13 +10357,53 @@ function onKeyDown(event: KeyboardEvent) {
   }
 
   if (isMapEditorActive()) {
-    if (event.code === 'KeyR') {
+    const commandKey = event.metaKey || event.ctrlKey;
+    const cameraPanStep = getEffectiveViewSize() * 0.08;
+    if (commandKey && event.code === 'KeyZ') {
       event.preventDefault();
-      rotateMapTool(1);
+      if (event.shiftKey) {
+        redoMapEdit();
+      } else {
+        undoMapEdit();
+      }
+    } else if (commandKey && event.code === 'KeyY') {
+      event.preventDefault();
+      redoMapEdit();
+    } else if (event.code === 'Equal' || event.code === 'NumpadAdd') {
+      event.preventDefault();
+      zoomEditorCameraBy(0.88);
+    } else if (event.code === 'Minus' || event.code === 'NumpadSubtract') {
+      event.preventDefault();
+      zoomEditorCameraBy(1.12);
+    } else if (event.code === 'Digit0' || event.code === 'Numpad0') {
+      event.preventDefault();
+      editorCameraState.zoomScale = 1;
+      applyCameraProjection();
+      resetEditorCameraTarget();
+      updateCamera(true);
+    } else if (event.code === 'ArrowUp' || event.code === 'KeyW') {
+      event.preventDefault();
+      nudgeEditorCamera(0, -cameraPanStep);
+    } else if (event.code === 'ArrowDown' || event.code === 'KeyS') {
+      event.preventDefault();
+      nudgeEditorCamera(0, cameraPanStep);
+    } else if (event.code === 'ArrowLeft' || event.code === 'KeyA') {
+      event.preventDefault();
+      nudgeEditorCamera(-cameraPanStep, 0);
+    } else if (event.code === 'ArrowRight' || event.code === 'KeyD') {
+      event.preventDefault();
+      nudgeEditorCamera(cameraPanStep, 0);
+    } else if (event.code === 'KeyR') {
+      event.preventDefault();
+      if (!rotateSelectedMapItem(1)) {
+        rotateMapTool(1);
+      }
       updateEditorCursor();
     } else if (event.code === 'KeyF') {
       event.preventDefault();
-      rotateMapTool(-1);
+      if (!rotateSelectedMapItem(-1)) {
+        rotateMapTool(-1);
+      }
       updateEditorCursor();
     }
     return;
@@ -7136,10 +10500,15 @@ function mountEvents() {
   visualViewport?.addEventListener('scroll', resizeRenderer);
   window.addEventListener('pointerdown', onPointerDown);
   window.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('pointerup', onPointerUp);
+  window.addEventListener('pointercancel', onPointerCancel);
+  window.addEventListener('wheel', onWheel, { passive: false });
   window.addEventListener('touchmove', onTouchMove, { passive: true });
   window.addEventListener('contextmenu', onContextMenu);
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
+  canvas.addEventListener('dragover', onCanvasDragOver);
+  canvas.addEventListener('drop', onCanvasDrop);
   for (const eventName of ['pointerdown', 'pointerup', 'click', 'touchstart', 'touchend', 'mousedown', 'mouseup'] as const) {
     utilityMenu.addEventListener(eventName, (event) => {
       event.stopPropagation();
@@ -7378,6 +10747,11 @@ async function initialize() {
   syncP2pUi();
   setOverlay(t('loadingAssets'));
   await loadTemplates();
+  await loadPublishedLevelMaps();
+  if (startsInEditorMode) {
+    currentEditedLevelIndex = resolveInitialLevelIndex();
+  }
+  dungeonMapConfig = loadMapConfig(startsInEditorMode ? currentEditedLevelIndex : 0);
   resetState();
   createSceneAssets();
   resizeRenderer();

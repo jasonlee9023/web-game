@@ -25,7 +25,15 @@ export class GamesService {
   getRelated(slug: string) {
     return store.getRelatedGames(slug);
   }
+
+  getHeroJourneyLevels(slug: string) {
+    const game = store.getGameBySlug(slug);
+    if (!game || game.slug !== 'hero-journey' || game.status !== 'published') {
+      throw new HttpError(404, 'Game not found');
+    }
+
+    return store.listHeroJourneyLevels();
+  }
 }
 
 export const gamesService = new GamesService();
-

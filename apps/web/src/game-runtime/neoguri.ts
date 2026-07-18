@@ -39,7 +39,7 @@ type ClimbState = {
 createHostedGame(
   canvas,
   {
-    title: '너구리',
+    title: '스낵 타워',
     mode: 'normal',
     durationMs: 80_000,
     reviveMs: 16_000,
@@ -412,4 +412,3 @@ createHostedGame(
     };
   },
 );
-
