@@ -1,8 +1,10 @@
 const port = Number.parseInt(process.env.PORT ?? '3001', 10);
 const host = process.env.HOST ?? '0.0.0.0';
 const logLevels = ['silent', 'error', 'warn', 'info', 'debug'] as const;
+const aiLevelProviders = ['auto', 'gemini', 'azure-openai', 'local'] as const;
 
 export type LogLevel = (typeof logLevels)[number];
+export type AiLevelProvider = (typeof aiLevelProviders)[number];
 
 function normalizeLogLevel(value: string | undefined): LogLevel {
   const normalizedValue = value?.toLowerCase();
@@ -16,6 +18,19 @@ function normalizeLogLevel(value: string | undefined): LogLevel {
 function normalizePositiveInteger(value: string | undefined, fallback: number) {
   const parsedValue = Number.parseInt(value ?? '', 10);
   return Number.isFinite(parsedValue) && parsedValue > 0 ? parsedValue : fallback;
+}
+
+function normalizeAiLevelProvider(value: string | undefined): AiLevelProvider {
+  const normalizedValue = value?.toLowerCase();
+  if (normalizedValue && aiLevelProviders.some((provider) => provider === normalizedValue)) {
+    return normalizedValue as AiLevelProvider;
+  }
+
+  return 'auto';
+}
+
+function trimTrailingSlash(value: string) {
+  return value.replace(/\/+$/, '');
 }
 
 function normalizePublisherId(value: string) {
@@ -39,9 +54,13 @@ export const env = {
   seedAdminEmail: process.env.SEED_ADMIN_EMAIL ?? 'admin@casualgame.world',
   seedAdminPassword: process.env.SEED_ADMIN_PASSWORD ?? 'Admin123!',
   seedAdminDisplayName: process.env.SEED_ADMIN_DISPLAY_NAME ?? 'Arcade Admin',
+  aiLevelProvider: normalizeAiLevelProvider(process.env.AI_LEVEL_PROVIDER),
   geminiApiKey: process.env.GEMINI_API_KEY ?? '',
   geminiModel: process.env.GEMINI_MODEL ?? 'gemini-2.0-flash',
   geminiApiBaseUrl: process.env.GEMINI_API_BASE_URL ?? 'https://generativelanguage.googleapis.com/v1beta',
+  azureOpenAiEndpoint: trimTrailingSlash(process.env.AZURE_OPENAI_ENDPOINT ?? process.env.AZURE_OPENAI_BASE_URL ?? ''),
+  azureOpenAiApiKey: process.env.AZURE_OPENAI_API_KEY ?? '',
+  azureOpenAiDeployment: process.env.AZURE_OPENAI_DEPLOYMENT ?? process.env.AZURE_OPENAI_MODEL ?? '',
   logLevel: normalizeLogLevel(process.env.LOG_LEVEL),
   logErrorStacks: process.env.LOG_ERROR_STACKS === 'true',
   logMaxMetaChars: normalizePositiveInteger(process.env.LOG_MAX_META_CHARS, 2000),

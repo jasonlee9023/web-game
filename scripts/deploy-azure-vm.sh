@@ -35,6 +35,10 @@ write_env_file() {
     printf 'WEB_ORIGIN=%s\n' "$WEB_ORIGIN"
     printf 'WEB_DIST_DIR=apps/web/dist\n'
     printf 'SERVE_WEB=true\n'
+    printf 'AI_LEVEL_PROVIDER=%s\n' "${AI_LEVEL_PROVIDER:-auto}"
+    printf 'AZURE_OPENAI_ENDPOINT=%s\n' "${AZURE_OPENAI_ENDPOINT:-${AZURE_OPENAI_BASE_URL:-}}"
+    printf 'AZURE_OPENAI_API_KEY=%s\n' "${AZURE_OPENAI_API_KEY:-}"
+    printf 'AZURE_OPENAI_DEPLOYMENT=%s\n' "${AZURE_OPENAI_DEPLOYMENT:-${AZURE_OPENAI_MODEL:-}}"
     printf 'LOG_LEVEL=%s\n' "${LOG_LEVEL:-warn}"
     printf 'LOG_ERROR_STACKS=%s\n' "${LOG_ERROR_STACKS:-false}"
     printf 'LOG_MAX_META_CHARS=%s\n' "${LOG_MAX_META_CHARS:-2000}"
@@ -100,6 +104,33 @@ ensure_env_value() {
   if ! grep -q "^${key}=" "$file"; then
     printf '%s=%s\n' "$key" "$value" >> "$file"
   fi
+}
+
+upsert_env_value() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  if [ -z "$value" ]; then
+    ensure_env_value "$file" "$key" "$value"
+    return
+  fi
+
+  if grep -q "^${key}=" "$file"; then
+    local temp_file
+    temp_file="$(mktemp)"
+    awk -v key="$key" -v value="$value" '
+      $0 ~ "^" key "=" {
+        print key "=" value
+        next
+      }
+      { print }
+    ' "$file" > "$temp_file"
+    cat "$temp_file" > "$file"
+    rm -f "$temp_file"
+    return
+  fi
+
+  printf '%s=%s\n' "$key" "$value" >> "$file"
 }
 
 configure_pm2_logrotate() {
@@ -168,9 +199,18 @@ if [ ! -f "${SHARED_DIR}/.env.production.local" ]; then
   cp "${DEPLOY_DIR}/production.env" "${SHARED_DIR}/.env.production.local"
   chmod 600 "${SHARED_DIR}/.env.production.local"
 fi
+ensure_env_value "${SHARED_DIR}/.env.production.local" AI_LEVEL_PROVIDER auto
+ensure_env_value "${SHARED_DIR}/.env.production.local" AZURE_OPENAI_ENDPOINT ''
+ensure_env_value "${SHARED_DIR}/.env.production.local" AZURE_OPENAI_API_KEY ''
+ensure_env_value "${SHARED_DIR}/.env.production.local" AZURE_OPENAI_DEPLOYMENT ''
 ensure_env_value "${SHARED_DIR}/.env.production.local" LOG_LEVEL warn
 ensure_env_value "${SHARED_DIR}/.env.production.local" LOG_ERROR_STACKS false
 ensure_env_value "${SHARED_DIR}/.env.production.local" LOG_MAX_META_CHARS 2000
+
+upsert_env_value "${SHARED_DIR}/.env.production.local" AI_LEVEL_PROVIDER "${AI_LEVEL_PROVIDER:-}"
+upsert_env_value "${SHARED_DIR}/.env.production.local" AZURE_OPENAI_ENDPOINT "${AZURE_OPENAI_ENDPOINT:-${AZURE_OPENAI_BASE_URL:-}}"
+upsert_env_value "${SHARED_DIR}/.env.production.local" AZURE_OPENAI_API_KEY "${AZURE_OPENAI_API_KEY:-}"
+upsert_env_value "${SHARED_DIR}/.env.production.local" AZURE_OPENAI_DEPLOYMENT "${AZURE_OPENAI_DEPLOYMENT:-${AZURE_OPENAI_MODEL:-}}"
 
 ln -sfn "${SHARED_DIR}/.env.production.local" "${RELEASE_DIR}/.env.production.local"
 ln -sfn "$RELEASE_DIR" "$CURRENT_DIR"

@@ -17,7 +17,7 @@ import { env } from '../../config/env';
 import { logger } from '../../utils/logger';
 import { HttpError } from '../../utils/http';
 
-type GeminiImagePart = {
+type LevelReferenceImage = {
   mimeType: string;
   data: string;
 };
@@ -241,7 +241,7 @@ function parseImageDataUrl(value: string | undefined) {
     throw new HttpError(413, 'Image is too large');
   }
 
-  return { mimeType, data } satisfies GeminiImagePart;
+  return { mimeType, data } satisfies LevelReferenceImage;
 }
 
 function inferBiome(prompt: string): HeroJourneyBiome {
@@ -375,11 +375,11 @@ function extractJsonObject(text: string) {
     if (start >= 0 && end > start) {
       return JSON.parse(trimmed.slice(start, end + 1)) as unknown;
     }
-    throw new Error('Gemini response did not contain JSON');
+    throw new Error('AI response did not contain JSON');
   }
 }
 
-function buildGeminiPrompt(prompt: string, hasImage: boolean) {
+function buildLevelPlanPrompt(prompt: string, hasImage: boolean) {
   return [
     'Create a Hero Journey level plan for a low-poly action RPG level editor.',
     'Return JSON only. Do not include markdown.',
@@ -391,8 +391,102 @@ function buildGeminiPrompt(prompt: string, hasImage: boolean) {
   ].join('\n');
 }
 
-async function requestGeminiPlan(prompt: string, image: GeminiImagePart | null) {
-  const parts: Array<Record<string, unknown>> = [{ text: buildGeminiPrompt(prompt, Boolean(image)) }];
+function hasAzureOpenAiConfig() {
+  return Boolean(env.azureOpenAiEndpoint && env.azureOpenAiApiKey && env.azureOpenAiDeployment);
+}
+
+function hasGeminiConfig() {
+  return Boolean(env.geminiApiKey);
+}
+
+function normalizeAzureOpenAiBaseUrl(endpoint: string) {
+  const trimmedEndpoint = endpoint.replace(/\/+$/, '');
+  return trimmedEndpoint.endsWith('/openai/v1') ? trimmedEndpoint : `${trimmedEndpoint}/openai/v1`;
+}
+
+function getPlannerProviderOrder() {
+  if (env.aiLevelProvider === 'azure-openai') {
+    return ['azure-openai'] as const;
+  }
+  if (env.aiLevelProvider === 'gemini') {
+    return ['gemini'] as const;
+  }
+  if (env.aiLevelProvider === 'local') {
+    return [] as const;
+  }
+
+  return ['azure-openai', 'gemini'] as const;
+}
+
+function buildAzureOpenAiUserContent(prompt: string, image: LevelReferenceImage | null) {
+  const content: Array<Record<string, unknown>> = [
+    {
+      type: 'text',
+      text: buildLevelPlanPrompt(prompt, Boolean(image)),
+    },
+  ];
+
+  if (image) {
+    content.push({
+      type: 'image_url',
+      image_url: {
+        url: `data:${image.mimeType};base64,${image.data}`,
+      },
+    });
+  }
+
+  return content;
+}
+
+async function requestAzureOpenAiPlan(prompt: string, image: LevelReferenceImage | null) {
+  const response = await fetch(`${normalizeAzureOpenAiBaseUrl(env.azureOpenAiEndpoint)}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'api-key': env.azureOpenAiApiKey,
+    },
+    body: JSON.stringify({
+      model: env.azureOpenAiDeployment,
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a game level designer. You only return compact valid JSON that matches the requested schema.',
+        },
+        {
+          role: 'user',
+          content: buildAzureOpenAiUserContent(prompt, image),
+        },
+      ],
+      temperature: 0.85,
+      max_tokens: 1800,
+      response_format: {
+        type: 'json_object',
+      },
+    }),
+  });
+
+  const json = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }>;
+    error?: { message?: string };
+  };
+
+  if (!response.ok) {
+    throw new Error(json.error?.message ?? `Azure OpenAI request failed with ${response.status}`);
+  }
+
+  const content = json.choices?.[0]?.message?.content;
+  const text = Array.isArray(content)
+    ? content.map((part) => (part.type === 'text' || !part.type ? part.text : '')).filter(Boolean).join('\n')
+    : content;
+  if (!text) {
+    throw new Error('Azure OpenAI response was empty');
+  }
+
+  return extractJsonObject(text);
+}
+
+async function requestGeminiPlan(prompt: string, image: LevelReferenceImage | null) {
+  const parts: Array<Record<string, unknown>> = [{ text: buildLevelPlanPrompt(prompt, Boolean(image)) }];
 
   if (image) {
     parts.push({
@@ -452,16 +546,33 @@ async function createLevelPlan(input: HeroJourneyLevelGenerateInput) {
   const image = parseImageDataUrl(input.imageDataUrl);
   const fallback = createFallbackPlan(prompt, Boolean(image));
 
-  if (!env.geminiApiKey) {
-    return fallback;
+  for (const provider of getPlannerProviderOrder()) {
+    if (provider === 'azure-openai') {
+      if (!hasAzureOpenAiConfig()) {
+        continue;
+      }
+
+      try {
+        return sanitizePlan(await requestAzureOpenAiPlan(prompt, image), fallback);
+      } catch (error) {
+        logger.warn('Azure OpenAI level generation fell back to the next planner', { error });
+      }
+    }
+
+    if (provider === 'gemini') {
+      if (!hasGeminiConfig()) {
+        continue;
+      }
+
+      try {
+        return sanitizePlan(await requestGeminiPlan(prompt, image), fallback);
+      } catch (error) {
+        logger.warn('Gemini level generation fell back to the next planner', { error });
+      }
+    }
   }
 
-  try {
-    return sanitizePlan(await requestGeminiPlan(prompt, image), fallback);
-  } catch (error) {
-    logger.warn('Gemini level generation fell back to local planner', { error });
-    return fallback;
-  }
+  return fallback;
 }
 
 function putTerrain(

@@ -18,6 +18,7 @@
     "azure:package": "node scripts/package-azure-app.mjs",
     "azure:deploy": "bash scripts/deploy-azure-app-service.sh",
     "azure:deploy:vm": "bash scripts/deploy-azure-vm.sh",
+    "azure:openai:setup": "bash scripts/setup-azure-openai.sh",
     "pm2:start": "pm2 startOrReload ecosystem.config.cjs --env production --update-env",
     "pm2:save": "pm2 save",
     "deploy": "npm ci && npm run build && npm run pm2:start && npm run pm2:save",
